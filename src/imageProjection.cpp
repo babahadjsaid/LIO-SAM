@@ -170,13 +170,13 @@ public:
             imuRotZ[i] = 0;
         }
     }
-
+ 
     ~ImageProjection(){}
 
     void imuHandler(const sensor_msgs::msg::Imu::SharedPtr imuMsg)
     {
         
-        sensor_msgs::msg::Imu thisImu = imuConverter(*imuMsg);
+        sensor_msgs::msg::Imu thisImu = imuConverter(*imuMsg);;
 
         std::lock_guard<std::mutex> lock1(imuLock);
         imuQueue.push_back(thisImu);
