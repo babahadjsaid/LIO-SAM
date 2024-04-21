@@ -1,7 +1,7 @@
 #include "utility.hpp"
 #include "lio_sam/msg/cloud_info.hpp"
 
-struct VelodynePointXYZIRT
+struct VelodynePointXYZIRT  // assumption: change this to support rs helios
 {
     PCL_ADD_POINT4D
     PCL_ADD_INTENSITY;
@@ -175,6 +175,7 @@ public:
 
     void imuHandler(const sensor_msgs::msg::Imu::SharedPtr imuMsg)
     {
+        
         sensor_msgs::msg::Imu thisImu = imuConverter(*imuMsg);
 
         std::lock_guard<std::mutex> lock1(imuLock);

@@ -344,7 +344,32 @@ public:
         po->intensity = pi->intensity;
     }
 
-    pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
+
+
+    pcl::PointCloud<PointType>::Ptr movePointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
+    {
+        pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
+
+        int cloudSize = cloudIn->size();
+        cloudOut->resize(cloudSize);
+        float cosz = std::cos(transformIn->yaw);
+        float sinz = std::sin(transformIn->yaw);
+        #pragma omp parallel for num_threads(numberOfCores)
+        for (int i = 0; i < cloudSize; ++i)
+        {
+            const auto &pointFrom = cloudIn->points[i];
+           
+            cloudOut->points[i].x = cosz * (pointFrom.x - transformIn->x) + sinz * (pointFrom.y - transformIn->y) ;
+            cloudOut->points[i].y = -sinz * (pointFrom.x - transformIn->x) + cosz * (pointFrom.y - transformIn->y) ;
+            cloudOut->points[i].z = pointFrom.z - transformIn->z + 0.662051;
+            cloudOut->points[i].intensity = pointFrom.intensity;
+        }
+        return cloudOut;
+    }
+
+
+
+    pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn,bool inverse=false)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
 
@@ -352,7 +377,8 @@ public:
         cloudOut->resize(cloudSize);
 
         Eigen::Affine3f transCur = pcl::getTransformation(transformIn->x, transformIn->y, transformIn->z, transformIn->roll, transformIn->pitch, transformIn->yaw);
-        
+        if (inverse)
+            transCur = transCur.inverse();
         #pragma omp parallel for num_threads(numberOfCores)
         for (int i = 0; i < cloudSize; ++i)
         {
@@ -360,6 +386,8 @@ public:
             cloudOut->points[i].x = transCur(0,0) * pointFrom.x + transCur(0,1) * pointFrom.y + transCur(0,2) * pointFrom.z + transCur(0,3);
             cloudOut->points[i].y = transCur(1,0) * pointFrom.x + transCur(1,1) * pointFrom.y + transCur(1,2) * pointFrom.z + transCur(1,3);
             cloudOut->points[i].z = transCur(2,0) * pointFrom.x + transCur(2,1) * pointFrom.y + transCur(2,2) * pointFrom.z + transCur(2,3);
+            if (inverse)
+                cloudOut->points[i].z +=  0.662051;
             cloudOut->points[i].intensity = pointFrom.intensity;
         }
         return cloudOut;
@@ -401,10 +429,10 @@ public:
 
     void visualizeGlobalMapThread()
     {
-        rclcpp::Rate rate(0.2);
+        rclcpp::Rate rate(5);
         while (rclcpp::ok()){
             rate.sleep();
-            publishGlobalMap();
+            publishLocallMap();
         }
         if (savePCD == false)
             return;
@@ -438,57 +466,49 @@ public:
         cout << "Saving map to pcd files completed" << endl;
     }
 
-    void publishGlobalMap()
+    void publishLocallMap()
     {
         if (pubLaserCloudSurround->get_subscription_count() == 0)
             return;
 
-        if (cloudKeyPoses3D->points.empty() == true)
+        if (cloudKeyPoses3D->points.empty() == true || laserCloudCornerFromMapDS->points.empty() == true )
             return;
-
-        pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());;
+        const auto methodStartTime = std::chrono::system_clock::now();
+        pcl::KdTreeFLANN<PointType>::Ptr kdtreeGlobalMap(new pcl::KdTreeFLANN<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyPoses(new pcl::PointCloud<PointType>());
-        pcl::PointCloud<PointType>::Ptr globalMapKeyPosesDS(new pcl::PointCloud<PointType>());
         pcl::PointCloud<PointType>::Ptr globalMapKeyFrames(new pcl::PointCloud<PointType>());
-        pcl::PointCloud<PointType>::Ptr globalMapKeyFramesDS(new pcl::PointCloud<PointType>());
+        pcl::PointCloud<PointType>::Ptr globalMapss(new pcl::PointCloud<PointType>());
 
         // kd-tree to find near key frames to visualize
         std::vector<int> pointSearchIndGlobalMap;
         std::vector<float> pointSearchSqDisGlobalMap;
         // search near key frames to visualize
         mtx.lock();
-        kdtreeGlobalMap->setInputCloud(cloudKeyPoses3D);
-        kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
+        kdtreeGlobalMap->setInputCloud(cloudKeyPoses3D); // create kd-tree
+        kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
+        
+        for (int i:pointSearchIndGlobalMap) {
+            *globalMapKeyFrames += *transformPointCloud(cornerCloudKeyFrames[i],  &cloudKeyPoses6D->points[i]);
+            *globalMapKeyFrames += *transformPointCloud(surfCloudKeyFrames[i],    &cloudKeyPoses6D->points[i]);
+            cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << cloudKeyPoses6D->size() << " ...";
+        }
         mtx.unlock();
-
+        kdtreeGlobalMap->setInputCloud(globalMapKeyFrames);
+        kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
         for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
-            globalMapKeyPoses->push_back(cloudKeyPoses3D->points[pointSearchIndGlobalMap[i]]);
-        // downsample near selected key frames
-        pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyPoses; // for global map visualization
-        downSizeFilterGlobalMapKeyPoses.setLeafSize(globalMapVisualizationPoseDensity, globalMapVisualizationPoseDensity, globalMapVisualizationPoseDensity); // for global map visualization
-        downSizeFilterGlobalMapKeyPoses.setInputCloud(globalMapKeyPoses);
-        downSizeFilterGlobalMapKeyPoses.filter(*globalMapKeyPosesDS);
-        for(auto& pt : globalMapKeyPosesDS->points)
         {
-            kdtreeGlobalMap->nearestKSearch(pt, 1, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap);
-            pt.intensity = cloudKeyPoses3D->points[pointSearchIndGlobalMap[0]].intensity;
+            int id = pointSearchIndGlobalMap[i];
+            globalMapss->points.push_back(globalMapKeyFrames->points[id]);
         }
-
-        // extract visualized and downsampled key frames
-        for (int i = 0; i < (int)globalMapKeyPosesDS->size(); ++i){
-            if (pointDistance(globalMapKeyPosesDS->points[i], cloudKeyPoses3D->back()) > globalMapVisualizationSearchRadius)
-                continue;
-            int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
-            *globalMapKeyFrames += *transformPointCloud(cornerCloudKeyFrames[thisKeyInd],  &cloudKeyPoses6D->points[thisKeyInd]);
-            *globalMapKeyFrames += *transformPointCloud(surfCloudKeyFrames[thisKeyInd],    &cloudKeyPoses6D->points[thisKeyInd]);
-        }
-        // downsample visualized points
-        pcl::VoxelGrid<PointType> downSizeFilterGlobalMapKeyFrames; // for global map visualization
-        downSizeFilterGlobalMapKeyFrames.setLeafSize(globalMapVisualizationLeafSize, globalMapVisualizationLeafSize, globalMapVisualizationLeafSize); // for global map visualization
-        downSizeFilterGlobalMapKeyFrames.setInputCloud(globalMapKeyFrames);
-        downSizeFilterGlobalMapKeyFrames.filter(*globalMapKeyFramesDS);
-        publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, odometryFrame);
+        
+        *globalMapss = *transformPointCloud(globalMapss,  &cloudKeyPoses6D->back(),true);
+        
+        
+        publishCloud(pubLaserCloudSurround, globalMapss, timeLaserInfoStamp, odometryFrame);
+        const std::chrono::duration<double> duration  = std::chrono::system_clock::now() - methodStartTime;
+        RCLCPP_INFO(get_logger(), "Computation took %f ms. cloud size %ld", 1000*duration.count(),globalMapss->size());
     }
+
 
 
 

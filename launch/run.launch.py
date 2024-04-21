@@ -11,8 +11,16 @@ def generate_launch_description():
     share_dir = get_package_share_directory('lio_sam')
     parameter_file = LaunchConfiguration('params_file')
     xacro_path = os.path.join(share_dir, 'config', 'robot.urdf.xacro')
-    rviz_config_file = os.path.join(share_dir, 'config', 'rviz2.rviz')
+    share_dir_rslidar = get_package_share_directory('rs_to_velodyne')
+    
 
+    config_rslidar = os.path.join(
+        share_dir_rslidar,
+        'config',
+        'param.yaml'
+        )
+
+    config_dir = os.path.join(get_package_share_directory('imu_filter_madgwick'), 'config')
     params_declare = DeclareLaunchArgument(
         'params_file',
         default_value=os.path.join(
@@ -68,10 +76,17 @@ def generate_launch_description():
             output='screen'
         ),
         Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            arguments=['-d', rviz_config_file],
+            package='imu_filter_madgwick',
+            executable='imu_filter_madgwick_node',
+            name='imu_filter',
+            output='screen',
+            parameters=[os.path.join(config_dir, 'imu_filter.yaml')],
+        ), 
+        Node(
+            package='rs_to_velodyne',
+            executable='rs_to_velodyne',
+            name='rs_converter',
+            parameters=[config_rslidar],
             output='screen'
         )
     ])

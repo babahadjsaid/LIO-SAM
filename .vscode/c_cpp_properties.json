@@ -1,0 +1,31 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/install/point_cloud_io/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/install/lio_sam/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/install/kindr_ros/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/install/kindr_msgs/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/install/imu_filter_madgwick/include/**",
+        "/opt/ros/humble/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/src/LIO-SAM/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/src/elevation_mapping/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/src/imu_filter_madgwick/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/src/kindr_ros/kindr_ros/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/src/point_cloud_io/include/**",
+        "/media/baba/Data/internships/LS2N/intern/SourceCode/src/src/rs_to_velodyne/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}

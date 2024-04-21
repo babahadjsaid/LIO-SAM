@@ -80,6 +80,7 @@ public:
     string baselinkFrame;
     string odometryFrame;
     string mapFrame;
+    string mapCentricFrame;
 
     // GPS Settings
     bool useImuHeadingInitialization;
@@ -171,6 +172,8 @@ public:
         get_parameter("odometryFrame", odometryFrame);
         declare_parameter("mapFrame", "map");
         get_parameter("mapFrame", mapFrame);
+        declare_parameter("mapCentricFrame", "map-centric");
+        get_parameter("mapCentricFrame", mapCentricFrame);
 
         declare_parameter("useImuHeadingInitialization", false);
         get_parameter("useImuHeadingInitialization", useImuHeadingInitialization);
@@ -313,7 +316,7 @@ public:
 
     sensor_msgs::msg::Imu imuConverter(const sensor_msgs::msg::Imu& imu_in)
     {
-        sensor_msgs::msg::Imu imu_out = imu_in;
+        sensor_msgs::msg::Imu imu_out = imu_in;//weird statment here ...
         // rotate acceleration
         Eigen::Vector3d acc(imu_in.linear_acceleration.x, imu_in.linear_acceleration.y, imu_in.linear_acceleration.z);
         acc = extRot * acc;
