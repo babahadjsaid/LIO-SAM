@@ -361,7 +361,7 @@ public:
            
             cloudOut->points[i].x = cosz * (pointFrom.x - transformIn->x) + sinz * (pointFrom.y - transformIn->y) ;
             cloudOut->points[i].y = -sinz * (pointFrom.x - transformIn->x) + cosz * (pointFrom.y - transformIn->y) ;
-            cloudOut->points[i].z = pointFrom.z - transformIn->z + 0.662051;
+            cloudOut->points[i].z = pointFrom.z - transformIn->z + ROBOT_HEIGHT;
             cloudOut->points[i].intensity = pointFrom.intensity;
         }
         return cloudOut;
@@ -495,18 +495,43 @@ public:
         mtx.unlock();
         kdtreeGlobalMap->setInputCloud(globalMapKeyFrames);
         kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
+        // vector<float> intensities = {};
+        // float mean = 0, variance=0;
         for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
         {
             int id = pointSearchIndGlobalMap[i];
             globalMapss->points.push_back(globalMapKeyFrames->points[id]);
+            // PointType pnt = globalMapKeyFrames->points[id];
+            // if (pnt.z > -ROBOT_HEIGHT + 0.2 && pnt.z < -ROBOT_HEIGHT + 0.83,pointDistance(cloudKeyPoses3D->back(),pnt)<1.5)
+            // {
+            //     intensities.push_back(pnt.intensity);
+            //     mean+=pnt.intensity;
+            // }
+            
         }
         
-        *globalMapss = *transformPointCloud(globalMapss,  &cloudKeyPoses6D->back(),true);
+        
+        
+        *globalMapss = *movePointCloud(globalMapss,  &cloudKeyPoses6D->back());
         
         
         publishCloud(pubLaserCloudSurround, globalMapss, timeLaserInfoStamp, odometryFrame);
         const std::chrono::duration<double> duration  = std::chrono::system_clock::now() - methodStartTime;
-        RCLCPP_INFO(get_logger(), "Computation took %f ms. cloud size %ld", 1000*duration.count(),globalMapss->size());
+        std::stringstream printing;
+        printing << "Computation took "<< 1000*duration.count()<<" ms.";
+        // if (!intensities.empty())
+        // {
+        //     mean /=intensities.size();
+        //     for (double inten : intensities) {
+        //         variance += pow(inten - mean, 2);
+        //     }
+        //     variance /= intensities.size();
+        //     variance = sqrt(variance);
+        //     printing << " with mean= "<<mean<<" and variance="<<variance;
+        // }
+        // intensities.clear();
+        
+        RCLCPP_INFO(get_logger(), printing.str().c_str());
     }
 
 

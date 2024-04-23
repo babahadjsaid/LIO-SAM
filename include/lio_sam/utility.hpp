@@ -147,6 +147,7 @@ public:
     float historyKeyframeSearchTimeDiff;
     int   historyKeyframeSearchNum;
     float historyKeyframeFitnessScore;
+    float ROBOT_HEIGHT;
 
     // global map visualization radius
     float globalMapVisualizationSearchRadius;
@@ -155,6 +156,7 @@ public:
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
+        ROBOT_HEIGHT = 0.662051;
         declare_parameter("pointCloudTopic", "points");
         get_parameter("pointCloudTopic", pointCloudTopic);
         declare_parameter("imuTopic", "imu/data");
