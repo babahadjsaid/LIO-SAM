@@ -95,8 +95,8 @@
 
 
     # Remove Moving Points Parameters
-    angularResolution_x: 0.4
-    angularResolution_y: 1.0
+    angularResolution_x: 0.2
+    angularResolution_y: 1.33
     maxAngleWidth: 360.0
     maxAngleHeight: 70.0
     angleShift: 20.0

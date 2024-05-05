@@ -35,9 +35,8 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl/range_image/range_image_planar.h>
 #include <pcl/filters/median_filter.h>
-
+#include <pcl/range_image/range_image.h>
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_listener.h>
@@ -172,7 +171,7 @@ public:
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
-        declare_parameter("angularResolution_x", 0.4f);
+        declare_parameter("angularResolution_x", 0.2f);
         get_parameter("angularResolution_x", ANGULARRESOLUTION_X);
         ANGULARRESOLUTION_X = (float) (  ANGULARRESOLUTION_X * TORADAIAN);
 

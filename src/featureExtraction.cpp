@@ -41,7 +41,7 @@ public:
         ParamServer("lio_sam_featureExtraction", options)
     {
         subLaserCloudInfo = create_subscription<lio_sam::msg::CloudInfo>(
-            "lio_sam/deskew/cloud_info", qos,
+            "lio_sam/RemoveMovingObjects/cloud_info", qos,
             std::bind(&FeatureExtraction::laserCloudInfoHandler, this, std::placeholders::_1));
 
         pubLaserCloudInfo = create_publisher<lio_sam::msg::CloudInfo>(

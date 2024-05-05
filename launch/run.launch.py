@@ -76,6 +76,13 @@ def generate_launch_description():
             output='screen'
         ),
         Node(
+            package='lio_sam',
+            executable='lio_sam_removePoints',
+            name='lio_sam_removePoints',
+            parameters=[parameter_file],
+            output='screen'
+        ),
+        Node(
             package='imu_filter_madgwick',
             executable='imu_filter_madgwick_node',
             name='imu_filter',

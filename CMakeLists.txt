@@ -54,12 +54,12 @@ target_link_libraries(${PROJECT_NAME}_imuPreintegration gtsam "${cpp_typesupport
 add_executable(${PROJECT_NAME}_mapOptimization src/mapOptmization.cpp)
 ament_target_dependencies(${PROJECT_NAME}_mapOptimization rclcpp rclpy std_msgs sensor_msgs geometry_msgs nav_msgs pcl_msgs visualization_msgs tf2 tf2_ros tf2_eigen tf2_sensor_msgs tf2_geometry_msgs OpenCV PCL GTSAM)
 
-# add_executable(${PROJECT_NAME}_removePoints src/RemoveMovingObjects.cpp)
-# ament_target_dependencies(${PROJECT_NAME}_removePoints rclcpp rclpy std_msgs sensor_msgs geometry_msgs nav_msgs pcl_msgs visualization_msgs tf2 tf2_ros tf2_eigen tf2_sensor_msgs tf2_geometry_msgs OpenCV PCL GTSAM)
+add_executable(${PROJECT_NAME}_removePoints src/RemoveMovingObjects.cpp)
+ament_target_dependencies(${PROJECT_NAME}_removePoints rclcpp rclpy std_msgs sensor_msgs geometry_msgs nav_msgs pcl_msgs visualization_msgs tf2 tf2_ros tf2_eigen tf2_sensor_msgs tf2_geometry_msgs OpenCV PCL GTSAM)
 
 if (OpenMP_CXX_FOUND)
   target_link_libraries(${PROJECT_NAME}_mapOptimization gtsam "${cpp_typesupport_target}" OpenMP::OpenMP_CXX)
-  # target_link_libraries(${PROJECT_NAME}_removePoints  "${cpp_typesupport_target}" OpenMP::OpenMP_CXX)
+  target_link_libraries(${PROJECT_NAME}_removePoints  "${cpp_typesupport_target}" OpenMP::OpenMP_CXX)
 else()
   target_link_libraries(${PROJECT_NAME}_mapOptimization gtsam "${cpp_typesupport_target}")
 endif()
@@ -95,10 +95,10 @@ install(
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# install(
-#   TARGETS ${PROJECT_NAME}_removePoints
-#   DESTINATION lib/${PROJECT_NAME}
-# )
+install(
+  TARGETS ${PROJECT_NAME}_removePoints
+  DESTINATION lib/${PROJECT_NAME}
+)
 
 
 install(

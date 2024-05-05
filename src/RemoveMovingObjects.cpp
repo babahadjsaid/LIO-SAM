@@ -7,39 +7,64 @@ private:
     cv::Mat currentImage_, previousImage_;
     Eigen::Affine3f sensorPose_ = (Eigen::Affine3f)Eigen::Translation3f(0.0f, 0.0f, 0.0f);
     pcl::RangeImage::CoordinateFrame coordinate_frame_ = pcl::RangeImage::LASER_FRAME;
-
-
-    
+    rclcpp::Subscription<lio_sam::msg::CloudInfo>::SharedPtr subCloud;
+    rclcpp::Publisher<lio_sam::msg::CloudInfo>::SharedPtr pubLaserCloudInfo;
+    std::mutex mapMtx_;
 public:
     RemoveMovingObjects(const rclcpp::NodeOptions & options) :
-            ParamServer("lio_sam_imageProjection", options)
+            ParamServer("lio_sam_RemoveMovingObject", options)
     {
          
-        
-
+        subCloud = create_subscription<lio_sam::msg::CloudInfo>(
+            "lio_sam/deskew/cloud_info", qos,
+            std::bind(&RemoveMovingObjects::pointCloudHandler, this, std::placeholders::_1));
+        pubLaserCloudInfo = create_publisher<lio_sam::msg::CloudInfo>(
+            "lio_sam/RemoveMovingObjects/cloud_info", qos);
+    
     }
 
 
 void pointCloudHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn){
+    mapMtx_.lock();
+    const auto StartMethod = std::chrono::system_clock::now();
+    pcl::PointCloud<pcl::PointXYZI> pc;
+    pcl::fromROSMsg(msgIn->cloud_deskewed,pc);
 
+    convertPointCloudToRangeImage(pc,currentImage_);
+    cv::Mat dst;
+    cv::normalize(currentImage_, dst, 0, 2, cv::NORM_MINMAX);
+    // cv::namedWindow("Hello world",cv::WINDOW_FULLSCREEN);
+    cv::imshow("test", dst);
+    const std::chrono::duration<double> duration = std::chrono::system_clock::now() - StartMethod;
+    float durationms = 100 - 1000 * duration.count();
+    std::cout <<"delay: "<< 100 - durationms <<std::endl;
+    dst.release();
+    currentImage_.release();
+    cv::waitKey(50);
+    mapMtx_.unlock();
 }
 
-void convertPointCloudToRangeImage(pcl::PointCloud<pcl::PointXYZ> &pointCloud,
+void convertPointCloudToRangeImage(pcl::PointCloud<pcl::PointXYZI> &pointCloud,
                                    cv::Mat& rangeImage_out)
 {
     if (!rangeImage_out.empty())
         rangeImage_out.release();
     rangeImage_out.create(MAXHEIGHT, MAXWIDTH, CV_32F);
     // height is w 
-    #pragma omp parallel for
+    #pragma omp parallel for num_threads(5)
     for (auto &&point : pointCloud)
     {
-        float R, omega, alpha;
-        R = sqrt(pow(point.x,2) + pow(point.y,2) + pow(point.z,2));
-        omega = -(asin(point.z/R) - (15 * TORADAIAN));
-        alpha = atan2(point.x,point.y);
-        int y = omega / ANGULARRESOLUTION_Y, x = alpha/ANGULARRESOLUTION_X;
-        rangeImage_out.at<float>(x, y) = R;
+        float R, omega, alpha,x=point.y,y = -point.x;// +90 degree rotation yaw
+        R = sqrt(pow(x,2) + pow(y,2) + pow(point.z,2));
+        omega = -(asin(point.z/R) - (19.1 * TORADAIAN));
+        alpha = atan2(y,x);
+        if (alpha < 0) alpha +=2*M_PI;
+        int i = alpha/ANGULARRESOLUTION_X , j = omega / ANGULARRESOLUTION_Y;
+        if (i<0 || j <0 || i> MAXWIDTH || j > MAXHEIGHT) std::cout<<"i: "<<i<<" j: "<<j<<" alpha: "<<asin(point.z/R)*(180.0/M_PI)<<std::endl;
+        #pragma omp critical
+        {
+            rangeImage_out.at<float>(j, i) = R;
+        }
     }
     
 }
@@ -68,7 +93,7 @@ void estimateRangeFlow(cv::Mat& rangeImage1, cv::Mat& rangeImage2, vector<cv::Ma
 
 
 
-#include <pcl/range_image/range_image.h>
+
 
 int main(int argc, char** argv)
 {
