@@ -16,7 +16,9 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include <opencv2/core.hpp>
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <pcl/kdtree/kdtree_flann.h>  // pcl include kdtree_flann throws error if PCL_NO_PRECOMPILE
                                       // is defined before
@@ -33,6 +35,9 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/range_image/range_image_planar.h>
+#include <pcl/filters/median_filter.h>
+
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_listener.h>
@@ -57,6 +62,11 @@
 #include <array>
 #include <thread>
 #include <mutex>
+
+
+
+#define TORADAIAN  (M_PI/180.0f)
+
 
 using namespace std;
 
@@ -154,8 +164,49 @@ public:
     float globalMapVisualizationPoseDensity;
     float globalMapVisualizationLeafSize;
 
+    // Remove Moving Points part.
+    float ANGULARRESOLUTION_X, ANGULARRESOLUTION_Y, MAXANGLEWIDTH, MAXRADIUS, NOISELEVEL, MINRANGE, ANGLESHIFT, MAXANGLEHEIGHT;
+    int BORDERSIZE, MAXWIDTH, MAXHEIGHT;
+
+
+
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
+        declare_parameter("angularResolution_x", 0.4f);
+        get_parameter("angularResolution_x", ANGULARRESOLUTION_X);
+        ANGULARRESOLUTION_X = (float) (  ANGULARRESOLUTION_X * TORADAIAN);
+
+        declare_parameter("angularResolution_y", 1.0f);
+        get_parameter("angularResolution_y", ANGULARRESOLUTION_Y);
+        ANGULARRESOLUTION_Y = (float) (  ANGULARRESOLUTION_Y * TORADAIAN);
+
+        declare_parameter("maxAngleWidth", 360.0f);
+        get_parameter("maxAngleWidth", MAXANGLEWIDTH);
+        MAXANGLEWIDTH = (float) (  MAXANGLEWIDTH * TORADAIAN);
+        MAXWIDTH = MAXANGLEWIDTH/ANGULARRESOLUTION_X;
+
+        declare_parameter("maxAngleHeight", 70.0f);
+        get_parameter("maxAngleHeight", MAXANGLEHEIGHT);
+
+        MAXANGLEHEIGHT = MAXANGLEHEIGHT * TORADAIAN;
+        MAXHEIGHT = MAXANGLEHEIGHT/ANGULARRESOLUTION_Y;
+        
+        declare_parameter("angleShift", 0.0f);
+        get_parameter("angleShift", ANGLESHIFT);
+        ANGLESHIFT *= TORADAIAN;
+        ANGLESHIFT = ANGLESHIFT/ANGULARRESOLUTION_Y;
+
+        declare_parameter("noiseLevel", 0.0f);
+        get_parameter("noiseLevel", NOISELEVEL);
+
+        declare_parameter("minRange", 0.0f);
+        get_parameter("minRange", MINRANGE);
+
+        declare_parameter("borderSize", 1);
+        get_parameter("borderSize", BORDERSIZE);
+
+
+
         ROBOT_HEIGHT = 0.662051;
         declare_parameter("pointCloudTopic", "points");
         get_parameter("pointCloudTopic", pointCloudTopic);

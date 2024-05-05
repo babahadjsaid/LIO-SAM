@@ -91,3 +91,15 @@
     globalMapVisualizationSearchRadius: 20.0    # meters, global map visualization radius
     globalMapVisualizationPoseDensity: 10.0       # meters, global map visualization keyframe density
     globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density
+
+
+
+    # Remove Moving Points Parameters
+    angularResolution_x: 0.4
+    angularResolution_y: 1.0
+    maxAngleWidth: 360.0
+    maxAngleHeight: 70.0
+    angleShift: 20.0
+    noiseLevel: 0.0
+    minRange: 1.0
+    borderSize: 0
