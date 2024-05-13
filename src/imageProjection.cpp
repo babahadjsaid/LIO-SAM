@@ -442,6 +442,10 @@ public:
         cloudInfo.initial_guess_roll = roll;
         cloudInfo.initial_guess_pitch = pitch;
         cloudInfo.initial_guess_yaw = yaw;
+        cloudInfo.vel_x = startOdomMsg.twist.twist.linear.x;
+        cloudInfo.vel_y = startOdomMsg.twist.twist.linear.y;
+        cloudInfo.vel_z = startOdomMsg.twist.twist.linear.z;
+
 
         cloudInfo.odom_available = true;
 

@@ -23,6 +23,10 @@ float32 initial_guess_roll
 float32 initial_guess_pitch
 float32 initial_guess_yaw
 
+float32 vel_x
+float32 vel_y
+float32 vel_z
+
 # Point cloud messages
 sensor_msgs/PointCloud2 cloud_deskewed  # original cloud deskewed
 sensor_msgs/PointCloud2 cloud_corner    # extracted corner feature

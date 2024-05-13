@@ -3,22 +3,26 @@
 
 class RemoveMovingObjects : public ParamServer
 {
+public:
+    vector<cv::Mat> frames_;
 private:
     cv::Mat currentImage_, previousImage_;
-    Eigen::Affine3f sensorPose_ = (Eigen::Affine3f)Eigen::Translation3f(0.0f, 0.0f, 0.0f);
-    pcl::RangeImage::CoordinateFrame coordinate_frame_ = pcl::RangeImage::LASER_FRAME;
-    rclcpp::Subscription<lio_sam::msg::CloudInfo>::SharedPtr subCloud;
-    rclcpp::Publisher<lio_sam::msg::CloudInfo>::SharedPtr pubLaserCloudInfo;
+    pcl::PointCloud<PointType> current_pc_, previous_pc_;
+    Eigen::Affine3f CurrentT_,ToCurrentT_,previousT_;
+    rclcpp::Subscription<lio_sam::msg::CloudInfo>::SharedPtr subCloud_;
+    rclcpp::Publisher<lio_sam::msg::CloudInfo>::SharedPtr pubLaserCloudInfo_;
     std::mutex mapMtx_;
+    
 public:
     RemoveMovingObjects(const rclcpp::NodeOptions & options) :
-            ParamServer("lio_sam_RemoveMovingObject", options)
+            ParamServer("lio_sam_RemoveMovingObject", options),
+            frames_({})
     {
          
-        subCloud = create_subscription<lio_sam::msg::CloudInfo>(
+        subCloud_ = create_subscription<lio_sam::msg::CloudInfo>(
             "lio_sam/deskew/cloud_info", qos,
             std::bind(&RemoveMovingObjects::pointCloudHandler, this, std::placeholders::_1));
-        pubLaserCloudInfo = create_publisher<lio_sam::msg::CloudInfo>(
+        pubLaserCloudInfo_ = create_publisher<lio_sam::msg::CloudInfo>(
             "lio_sam/RemoveMovingObjects/cloud_info", qos);
     
     }
@@ -27,22 +31,40 @@ public:
 void pointCloudHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn){
     mapMtx_.lock();
     const auto StartMethod = std::chrono::system_clock::now();
-    pcl::PointCloud<pcl::PointXYZI> pc;
-    pcl::fromROSMsg(msgIn->cloud_deskewed,pc);
+    
+    pcl::fromROSMsg(msgIn->cloud_deskewed,current_pc_);
+    
+    if (previous_pc_.empty())
+    {
+        previous_pc_ = current_pc_;
+        previousT_ = pcl::getTransformation(msgIn->initial_guess_x, msgIn->initial_guess_y, msgIn->initial_guess_z, msgIn->initial_guess_roll, msgIn->initial_guess_pitch, msgIn->initial_guess_yaw);
+        pubLaserCloudInfo_->publish(*msgIn);
+        mapMtx_.unlock();
+        return;
+    }
+    
+    convertPointCloudToRangeImage(current_pc_,currentImage_);
+    displayImage(currentImage_);
+    CurrentT_ = pcl::getTransformation(msgIn->initial_guess_x, msgIn->initial_guess_y, msgIn->initial_guess_z, msgIn->initial_guess_roll, msgIn->initial_guess_pitch, msgIn->initial_guess_yaw);
+    ToCurrentT_ = previousT_.inverse() * CurrentT_;
+    
+    transformPointCloud(previous_pc_,ToCurrentT_);
+    convertPointCloudToRangeImage(previous_pc_,previousImage_);
+    applyMedianFilter(currentImage_,previousImage_);
+    vector<cv::Mat> rangeFlow;
+    rangeFlow = estimateRangeFlow(currentImage_,previousImage_);
 
-    convertPointCloudToRangeImage(pc,currentImage_);
-    cv::Mat dst;
-    cv::normalize(currentImage_, dst, 0, 3, cv::NORM_MINMAX);
-    // cv::namedWindow("Hello world",cv::WINDOW_FULLSCREEN);
-    cv::imshow("test", dst);
-    cv::imwrite("image.png",dst);
+    // TODO: fix the problem of blank frames....
+
+
+    previous_pc_ = current_pc_;
+    previousT_ = CurrentT_;
     const std::chrono::duration<double> duration = std::chrono::system_clock::now() - StartMethod;
     float durationms = 100 - 1000 * duration.count();
     std::cout <<"delay: "<< 100 - durationms <<std::endl;
-    dst.release();
-    currentImage_.release();
-    cv::waitKey(50);
+    pubLaserCloudInfo_->publish(*msgIn);
     mapMtx_.unlock();
+    return;
 }
 
 void convertPointCloudToRangeImage(pcl::PointCloud<pcl::PointXYZI> &pointCloud,
@@ -69,22 +91,33 @@ void convertPointCloudToRangeImage(pcl::PointCloud<pcl::PointXYZI> &pointCloud,
     
 }
 
-
-
-void applyMedianFilter(const cv::Mat& inputImage, cv::Mat& outputImage, int kernelSize)
-{
-    // Apply median filter
-    cv::medianBlur(inputImage, outputImage, kernelSize);
+void displayImage(cv::Mat &image){ // this is just pieces of code not yet implemented
+    cv::Mat frame,image2;
+    cv::normalize(image, frame, 0, 255, cv::NORM_MINMAX);
+    frame.convertTo(image2, CV_8U);
+    std::stringstream ss;
+    ss << "image_" << frames_.size() << ".png";
+    // cv::imwrite(ss.str(),image2);
+    frames_.push_back(image2);
+    cv::imshow("test", frame);
+    cv::waitKey(50);
+    frame.release();
 }
 
-void estimateRangeFlow(cv::Mat& rangeImage1, cv::Mat& rangeImage2, vector<cv::Mat> rangeFlow)
+void applyMedianFilter(cv::Mat& currentImage, cv::Mat& previousImage, int kernelSize=3)
+{
+    cv::medianBlur(currentImage, currentImage, kernelSize);
+    cv::medianBlur(previousImage, previousImage, kernelSize);
+}
+
+vector<cv::Mat> estimateRangeFlow(cv::Mat& rangeImage1, cv::Mat& rangeImage2)
 {
     // Calculate spatial-temporal gradients
     cv::Mat dx, dy, dR;
     cv::Sobel(rangeImage1, dx, CV_32F, 1, 0, 1);
     cv::Sobel(rangeImage1, dy, CV_32F, 0, 1, 1);
     cv::subtract(rangeImage2, rangeImage1, dR);
-    rangeFlow = {dx, dy, dR};
+    return {dx, dy, dR};
 }
 
 
@@ -149,7 +182,36 @@ int main(int argc, char** argv)
     exec.spin();
 
     rclcpp::shutdown();
+    cout << "Hello"<<endl;
+    cv::Size S = IP->frames_[0].size();    
+    int fourcc = cv::VideoWriter::fourcc('H','2','6','4');
+    cv::VideoWriter outputVideo;  // Open the output
+    outputVideo.open("output.avi"  , fourcc, 20, S, false);  //30 for 30 fps
+
+    if (!outputVideo.isOpened()){
+        cout  << "Could not open the output video for write: "<< endl;
+        return -1;
+    }
+
+    for(int i=0; i<IP->frames_.size(); i++){
+        outputVideo << IP->frames_[i];
+        
+    }
+
+    cout << "Finished writing" << endl;
     return 0;
 }
 
 
+
+
+
+    
+// }
+// void writeVideo(cv::Mat &image)
+// {
+//     cv::Mat frame;
+//     cv::normalize(currentImage_, frame, 0, 255, cv::NORM_MINMAX);
+    
+//     cv::imwrite("image.png",frame);
+// }
