@@ -117,7 +117,9 @@ public:
         tf2::convert(t, tCur);
 
         // publish latest odometry
+        rclcpp::Clock clock;
         nav_msgs::msg::Odometry laserOdometry = imuOdomQueue.back();
+        laserOdometry.header.stamp = clock.now();
         laserOdometry.pose.pose.position.x = t.transform.translation.x;
         laserOdometry.pose.pose.position.y = t.transform.translation.y;
         laserOdometry.pose.pose.position.z = t.transform.translation.z;

@@ -514,8 +514,8 @@ public:
         
         *globalMapss = *movePointCloud(globalMapss,  &cloudKeyPoses6D->back());
         
-        
-        publishCloud(pubLaserCloudSurround, globalMapss, timeLaserInfoStamp, odometryFrame);
+        rclcpp::Clock clock;
+        publishCloud(pubLaserCloudSurround, globalMapss, clock.now(), odometryFrame);
         const std::chrono::duration<double> duration  = std::chrono::system_clock::now() - methodStartTime;
         std::stringstream printing;
         printing << "Computation took "<< 1000*duration.count()<<" ms.";
