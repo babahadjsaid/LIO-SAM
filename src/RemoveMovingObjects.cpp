@@ -1,6 +1,12 @@
 #include "lio_sam/utility.hpp"
 #include "lio_sam/msg/cloud_info.hpp"
 
+
+struct xi {
+    float R0;
+    float omega0;
+    float alpha0;
+};
 class RemoveMovingObjects : public ParamServer
 {
 public:
@@ -12,6 +18,7 @@ private:
     rclcpp::Subscription<lio_sam::msg::CloudInfo>::SharedPtr subCloud_;
     rclcpp::Publisher<lio_sam::msg::CloudInfo>::SharedPtr pubLaserCloudInfo_;
     std::mutex mapMtx_;
+    float k = 0.5;
     
 public:
     RemoveMovingObjects(const rclcpp::NodeOptions & options) :
@@ -44,24 +51,25 @@ void pointCloudHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn){
     }
     
     convertPointCloudToRangeImage(current_pc_,currentImage_);
-    displayImage(currentImage_);
+    frames_.push_back(currentImage_);
     CurrentT_ = pcl::getTransformation(msgIn->initial_guess_x, msgIn->initial_guess_y, msgIn->initial_guess_z, msgIn->initial_guess_roll, msgIn->initial_guess_pitch, msgIn->initial_guess_yaw);
     ToCurrentT_ = previousT_.inverse() * CurrentT_;
     
     transformPointCloud(previous_pc_,ToCurrentT_);
     convertPointCloudToRangeImage(previous_pc_,previousImage_);
+    displayImage(previousImage_);
     applyMedianFilter(currentImage_,previousImage_);
+    // TODO: fix the problem of blank frames.... Currently i think it is not a problem from my part math part..
     vector<cv::Mat> rangeFlow;
     rangeFlow = estimateRangeFlow(currentImage_,previousImage_);
-
-    // TODO: fix the problem of blank frames....
-
-
+    xi tmp = estimateRangeFlow(currentImage_,rangeFlow);
+    std::cout << "alpha: "<< tmp.alpha0<<" omega: " << tmp.omega0<< " R_t: "<<tmp.R0 << std::endl;
+    // TODO: look if this is the same with the received vel??
     previous_pc_ = current_pc_;
     previousT_ = CurrentT_;
     const std::chrono::duration<double> duration = std::chrono::system_clock::now() - StartMethod;
     float durationms = 100 - 1000 * duration.count();
-    std::cout <<"delay: "<< 100 - durationms <<std::endl;
+    //std::cout <<"delay: "<< 100 - durationms <<std::endl;
     pubLaserCloudInfo_->publish(*msgIn);
     mapMtx_.unlock();
     return;
@@ -93,12 +101,7 @@ void convertPointCloudToRangeImage(pcl::PointCloud<pcl::PointXYZI> &pointCloud,
 
 void displayImage(cv::Mat &image){ // this is just pieces of code not yet implemented
     cv::Mat frame,image2;
-    cv::normalize(image, frame, 0, 255, cv::NORM_MINMAX);
-    frame.convertTo(image2, CV_8U);
-    std::stringstream ss;
-    ss << "image_" << frames_.size() << ".png";
-    // cv::imwrite(ss.str(),image2);
-    frames_.push_back(image2);
+    cv::normalize(image, frame, 0, 1, cv::NORM_MINMAX);
     cv::imshow("test", frame);
     cv::waitKey(50);
     frame.release();
@@ -114,13 +117,56 @@ vector<cv::Mat> estimateRangeFlow(cv::Mat& rangeImage1, cv::Mat& rangeImage2)
 {
     // Calculate spatial-temporal gradients
     cv::Mat dx, dy, dR;
-    cv::Sobel(rangeImage1, dx, CV_32F, 1, 0, 1);
-    cv::Sobel(rangeImage1, dy, CV_32F, 0, 1, 1);
+    cv::Sobel(rangeImage1, dx, CV_32F, 1, 0, 1);//alpha
+    cv::Sobel(rangeImage1, dy, CV_32F, 0, 1, 1);//omega
     cv::subtract(rangeImage2, rangeImage1, dR);
     return {dx, dy, dR};
 }
 
+float geometricConstraintResidual(const xi& rf, float R_w, float R_a, float R_t) {
+    return R_w * rf.omega0 + R_a * rf.alpha0 + R_t - rf.R0;
+}
 
+float robustFunction(float rho) {
+    return (pow(k,2) / 2) * log(1 + pow((rho / k),2));
+}
+float weightFunction(float rho) {
+    return 1.0 / (1.0 + k * rho * rho);
+}
+
+// Function to estimate range flow
+xi estimateRangeFlow(cv::Mat& rangeImage,vector<cv::Mat>& rangeflow) {
+    xi estimatedFlow = {0, 0, 0};
+
+    // Initialize variables for optimization
+    float sumWeights = 0;
+    Eigen::Vector3f sumResiduals(0, 0, 0);
+     
+    // Iterate over each point
+    for(int i = 0; i < rangeImage.rows; i++)
+    {
+        for(int j = 0; j < rangeImage.cols; j++) {
+        
+        float R     = rangeImage.at<float>(i,j);
+        float omega = rangeflow[0].at<float>(i,j);
+        float alpha = rangeflow[1].at<float>(i,j);
+        float R_t   = rangeflow[2].at<float>(i,j);
+
+        float rho = geometricConstraintResidual(estimatedFlow, omega, alpha,R_t);
+        float weight = weightFunction(rho);
+        sumWeights += weight;
+        sumResiduals += weight * Eigen::Vector3f(R * omega, R * alpha, R * R_t);
+    }}
+
+    // Estimate the range flow variables
+    if (sumWeights > 0) {
+        estimatedFlow.R0 = sumResiduals[0] / sumWeights;
+        estimatedFlow.omega0 = sumResiduals[1] / sumWeights;
+        estimatedFlow.alpha0 = sumResiduals[2] / sumWeights;
+    }
+
+    return estimatedFlow;
+}
 
 int checkRing(double angle) {
     if (angle >= (15 * TORADAIAN))                                   return 0;
@@ -184,19 +230,13 @@ int main(int argc, char** argv)
     rclcpp::shutdown();
     cout << "Hello"<<endl;
     cv::Size S = IP->frames_[0].size();    
-    int fourcc = cv::VideoWriter::fourcc('H','2','6','4');
-    cv::VideoWriter outputVideo;  // Open the output
-    outputVideo.open("output.avi"  , fourcc, 20, S, false);  //30 for 30 fps
-
-    if (!outputVideo.isOpened()){
-        cout  << "Could not open the output video for write: "<< endl;
-        return -1;
-    }
-
-    for(int i=0; i<IP->frames_.size(); i++){
-        outputVideo << IP->frames_[i];
+    for (size_t i = 0; i < IP->frames_.size(); i++)
+    {
+        IP->displayImage(IP->frames_[i]);
         
+        cv::waitKey(100);
     }
+    
 
     cout << "Finished writing" << endl;
     return 0;
