@@ -472,6 +472,16 @@ public:
 
 
 
+template<typename Func, typename Type, typename... Args, typename T>
+T BenchmarkFunction(Type* self, Func func, std::string function_name, Args... args)
+ {
+    const auto methodStartTime = std::chrono::system_clock::now();
+    T ret = (self->*func)(std::forward<Args>(args)...);
+    const std::chrono::duration<double> durationOfFunction = std::chrono::system_clock::now() - methodStartTime;
+    double durationOfFunctionMS = 1000 * durationOfFunction.count();
+    self->BenchmarkTiming_<<"The function " << function_name << " Took " << durationOfFunctionMS <<" ms ";
+    return ret;
+  }
 
 
 sensor_msgs::msg::PointCloud2 publishCloud(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr thisPub, pcl::PointCloud<PointType>::Ptr thisCloud, rclcpp::Time thisStamp, std::string thisFrame)

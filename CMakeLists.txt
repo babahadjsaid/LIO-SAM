@@ -59,9 +59,10 @@ ament_target_dependencies(${PROJECT_NAME}_removePoints rclcpp rclpy std_msgs sen
 
 if (OpenMP_CXX_FOUND)
   target_link_libraries(${PROJECT_NAME}_mapOptimization gtsam "${cpp_typesupport_target}" OpenMP::OpenMP_CXX)
-  target_link_libraries(${PROJECT_NAME}_removePoints  "${cpp_typesupport_target}" OpenMP::OpenMP_CXX)
+  target_link_libraries(${PROJECT_NAME}_removePoints  gtsam "${cpp_typesupport_target}" OpenMP::OpenMP_CXX)
 else()
   target_link_libraries(${PROJECT_NAME}_mapOptimization gtsam "${cpp_typesupport_target}")
+  target_link_libraries(${PROJECT_NAME}_removePoints gtsam "${cpp_typesupport_target}")
 endif()
 
 

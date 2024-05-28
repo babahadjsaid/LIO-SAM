@@ -11,14 +11,18 @@ class RemoveMovingObjects : public ParamServer
 {
 public:
     vector<cv::Mat> frames_;
+    std::stringstream BenchmarkTiming_;
 private:
     cv::Mat currentImage_, previousImage_;
+    double previous_t,dt;
     pcl::PointCloud<PointType> current_pc_, previous_pc_;
     Eigen::Affine3f CurrentT_,ToCurrentT_,previousT_;
     rclcpp::Subscription<lio_sam::msg::CloudInfo>::SharedPtr subCloud_;
     rclcpp::Publisher<lio_sam::msg::CloudInfo>::SharedPtr pubLaserCloudInfo_;
     std::mutex mapMtx_;
-    float k = 0.5;
+    std::vector<double> LidarAngles;
+    float k = 2.3849,learningRate = 0.01;
+    int maxIterations = 100;
     
 public:
     RemoveMovingObjects(const rclcpp::NodeOptions & options) :
@@ -26,12 +30,9 @@ public:
             frames_({})
     {
          
-        subCloud_ = create_subscription<lio_sam::msg::CloudInfo>(
-            "lio_sam/deskew/cloud_info", qos,
-            std::bind(&RemoveMovingObjects::pointCloudHandler, this, std::placeholders::_1));
-        pubLaserCloudInfo_ = create_publisher<lio_sam::msg::CloudInfo>(
-            "lio_sam/RemoveMovingObjects/cloud_info", qos);
-    
+        subCloud_ = create_subscription<lio_sam::msg::CloudInfo>( "lio_sam/deskew/cloud_info", qos, std::bind(&RemoveMovingObjects::pointCloudHandler, this, std::placeholders::_1));
+        pubLaserCloudInfo_ = create_publisher<lio_sam::msg::CloudInfo>( "lio_sam/RemoveMovingObjects/cloud_info", qos);
+        LidarAngles = {15,13,11,9,7,5.5,4,2.67,1.33,0,-1.33,-2.67,-4,-5.33,-6.67,-8,-10,-16,-13,-19,-22,-28,-25,-31,-34,-37,-40,-43,-46,-49,-52,-55};
     }
 
 
@@ -44,12 +45,13 @@ void pointCloudHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn){
     if (previous_pc_.empty())
     {
         previous_pc_ = current_pc_;
+        previous_t = rclcpp::Time(msgIn->header.stamp).seconds();
         previousT_ = pcl::getTransformation(msgIn->initial_guess_x, msgIn->initial_guess_y, msgIn->initial_guess_z, msgIn->initial_guess_roll, msgIn->initial_guess_pitch, msgIn->initial_guess_yaw);
         pubLaserCloudInfo_->publish(*msgIn);
         mapMtx_.unlock();
         return;
     }
-    
+    dt = rclcpp::Time(msgIn->header.stamp).seconds() - previous_t;
     convertPointCloudToRangeImage(current_pc_,currentImage_);
     frames_.push_back(currentImage_);
     CurrentT_ = pcl::getTransformation(msgIn->initial_guess_x, msgIn->initial_guess_y, msgIn->initial_guess_z, msgIn->initial_guess_roll, msgIn->initial_guess_pitch, msgIn->initial_guess_yaw);
@@ -61,12 +63,23 @@ void pointCloudHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn){
     applyMedianFilter(currentImage_,previousImage_);
     // TODO: fix the problem of blank frames.... Currently i think it is not a problem from my part math part..
     vector<cv::Mat> rangeFlow;
-    rangeFlow = estimateRangeFlow(currentImage_,previousImage_);
-    xi tmp = estimateRangeFlow(currentImage_,rangeFlow);
-    std::cout << "alpha: "<< tmp.alpha0<<" omega: " << tmp.omega0<< " R_t: "<<tmp.R0 << std::endl;
+    rangeFlow = CalculateSpatio_temporalDer(currentImage_,previousImage_);
+    const auto methodStartTime = std::chrono::system_clock::now();
+    xi tmp = CoarseEstimate(rangeFlow,dt);
+    const std::chrono::duration<double> durationOfFunction = std::chrono::system_clock::now() - methodStartTime;
+    double durationOfFunctionMS = 1000 * durationOfFunction.count();
+    std::cout<<"The function  Took " << durationOfFunctionMS <<" ms ";
+    auto& omega = rangeFlow[1].at<float>(10,10);
+    auto& alpha = rangeFlow[2].at<float>(10,10);
+    auto& R_T = rangeFlow[3].at<float>(10,10);
+    std::cout << "r: "<< geometricConstraintResidual(tmp,omega,alpha,R_T)<<std::endl;
+    std::cout << "R_t: "<<tmp.R0 << std::endl;
+    std::cout << "R_t2: "<<ToCurrentT_.translation().norm() << std::endl;
+    
     // TODO: look if this is the same with the received vel??
     previous_pc_ = current_pc_;
     previousT_ = CurrentT_;
+    previous_t = rclcpp::Time(msgIn->header.stamp).seconds();
     const std::chrono::duration<double> duration = std::chrono::system_clock::now() - StartMethod;
     float durationms = 100 - 1000 * duration.count();
     //std::cout <<"delay: "<< 100 - durationms <<std::endl;
@@ -113,58 +126,75 @@ void applyMedianFilter(cv::Mat& currentImage, cv::Mat& previousImage, int kernel
     cv::medianBlur(previousImage, previousImage, kernelSize);
 }
 
-vector<cv::Mat> estimateRangeFlow(cv::Mat& rangeImage1, cv::Mat& rangeImage2)
+vector<cv::Mat> CalculateSpatio_temporalDer(const cv::Mat& rangeImage1, const cv::Mat& rangeImage2)
 {
     // Calculate spatial-temporal gradients
-    cv::Mat dx, dy, dR;
+    cv::Mat dx, dy, dR,tmp,dx1,dy1,dR1;
+    cv::hconcat(rangeImage1, rangeImage2, tmp);
     cv::Sobel(rangeImage1, dx, CV_32F, 1, 0, 1);//alpha
     cv::Sobel(rangeImage1, dy, CV_32F, 0, 1, 1);//omega
     cv::subtract(rangeImage2, rangeImage1, dR);
-    return {dx, dy, dR};
+    cv::Sobel(rangeImage2, dx1, CV_32F, 1, 0, 1);//alpha
+    cv::Sobel(rangeImage2, dy1, CV_32F, 0, 1, 1);//omega
+    cv::hconcat(dx, dx1, dx);
+    cv::hconcat(dy, dy1, dy);
+    dR1 = -dR;
+    cv::hconcat(dR, dR1, dR);
+
+    return {tmp, dx, dy, dR};
 }
 
 float geometricConstraintResidual(const xi& rf, float R_w, float R_a, float R_t) {
     return R_w * rf.omega0 + R_a * rf.alpha0 + R_t - rf.R0;
 }
-
-float robustFunction(float rho) {
-    return (pow(k,2) / 2) * log(1 + pow((rho / k),2));
-}
 float weightFunction(float rho) {
-    return 1.0 / (1.0 + k * rho * rho);
+    return 1.0 / (1.0 + pow(rho/k,2));
 }
 
-// Function to estimate range flow
-xi estimateRangeFlow(cv::Mat& rangeImage,vector<cv::Mat>& rangeflow) {
+xi CoarseEstimate(const vector<cv::Mat>& rangeflow, double dt) {
     xi estimatedFlow = {0, 0, 0};
-
-    // Initialize variables for optimization
-    float sumWeights = 0;
-    Eigen::Vector3f sumResiduals(0, 0, 0);
-     
-    // Iterate over each point
-    for(int i = 0; i < rangeImage.rows; i++)
-    {
-        for(int j = 0; j < rangeImage.cols; j++) {
+    int rows = rangeflow[0].rows;
+    int cols = rangeflow[0].cols;
+    Eigen::VectorXf residuals(rows * cols);
+    Eigen::VectorXf weights(rows * cols);
+    Eigen::MatrixXf X(rows * cols, 3);
+    Eigen::VectorXf y(rows * cols);
+    for (int iter = 0; iter < maxIterations; ++iter) {
+        int index = 0;
+        for (int i = 0; i < rows; ++i) {
+            double dw = (i == 0) ? 2 : (LidarAngles[i] - LidarAngles[i-1]) * TORADAIAN;
+            for (int j = 0; j < cols; ++j) {
+                float omega = rangeflow[1].at<float>(i, j) / dw;
+                float alpha = rangeflow[2].at<float>(i, j) / ANGULARRESOLUTION_X;
+                float R_t = rangeflow[3].at<float>(i, j) / dt;
+                X(index, 0) = omega; // omega
+                X(index, 1) = alpha; // alpha
+                X(index, 2) = 1.0f; // Constant term
+                y(index) = R_t; // R_t
+                float rho = geometricConstraintResidual(estimatedFlow, omega, alpha, R_t);
+                residuals(index) = rho;
+                weights(index) = weightFunction(rho);
+                ++index;
+            }
+        }
         
-        float R     = rangeImage.at<float>(i,j);
-        float omega = rangeflow[0].at<float>(i,j);
-        float alpha = rangeflow[1].at<float>(i,j);
-        float R_t   = rangeflow[2].at<float>(i,j);
-
-        float rho = geometricConstraintResidual(estimatedFlow, omega, alpha,R_t);
-        float weight = weightFunction(rho);
-        sumWeights += weight;
-        sumResiduals += weight * Eigen::Vector3f(R * omega, R * alpha, R * R_t);
-    }}
-
-    // Estimate the range flow variables
-    if (sumWeights > 0) {
-        estimatedFlow.R0 = sumResiduals[0] / sumWeights;
-        estimatedFlow.omega0 = sumResiduals[1] / sumWeights;
-        estimatedFlow.alpha0 = sumResiduals[2] / sumWeights;
+        Eigen::DiagonalMatrix<float, Eigen::Dynamic> W = weights.asDiagonal();
+            
+            
+        Eigen::VectorXf B = (X.transpose() * W * X).inverse() * (X.transpose() * W * y);//to be optimised.
+        
+        xi newEstimate = {B(0), B(1), B(2)};
+        float change = abs(newEstimate.omega0 - estimatedFlow.omega0) +
+                        abs(newEstimate.alpha0 - estimatedFlow.alpha0) +
+                        abs(newEstimate.R0 - estimatedFlow.R0);
+        if (change < 0.001) {
+            estimatedFlow = newEstimate;
+            break;
+        }
+        
+        estimatedFlow = newEstimate;
     }
-
+    
     return estimatedFlow;
 }
 
