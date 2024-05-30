@@ -195,6 +195,7 @@ public:
     // Remove Moving Points part.
     float ANGULARRESOLUTION_X, ANGULARRESOLUTION_Y, MAXANGLEWIDTH, MAXRADIUS, NOISELEVEL, MINRANGE, ANGLESHIFT, MAXANGLEHEIGHT;
     int BORDERSIZE, MAXWIDTH, MAXHEIGHT;
+    std::vector<double> LidarAngles,savitzkyGolayCoefficients;
 
 
 
@@ -232,9 +233,10 @@ public:
 
         declare_parameter("borderSize", 1);
         get_parameter("borderSize", BORDERSIZE);
-
-
-
+        LidarAngles = {15,13,11,9,7,5.5,4,2.67,1.33,0,-1.33,-2.67,-4,-5.33,-6.67,-8,-10,-16,-13,-19,-22,-28,-25,-31,-34,-37,-40,-43,-46,-49,-52,-55};
+        std::for_each(LidarAngles.begin(), LidarAngles.end(), [](double& x) {
+        x *= TORADAIAN; });
+        savitzkyGolayCoefficients = {-0.08571429,  0.34285714,  0.48571429,  0.34285714, -0.08571429};
         ROBOT_HEIGHT = 0.662051;
         declare_parameter("pointCloudTopic", "points");
         get_parameter("pointCloudTopic", pointCloudTopic);

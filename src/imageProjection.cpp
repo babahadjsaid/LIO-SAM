@@ -76,7 +76,7 @@ private:
 
     int ringFlag = 0;
     int deskewFlag;
-    cv::Mat rangeMat;
+    cv::Mat rangeMat,inclinMat;
 
     bool odomDeskewFlag;
     float odomIncreX;
@@ -157,7 +157,7 @@ public:
         extractedCloud->clear();
         // reset range matrix for range image projection
         rangeMat = cv::Mat(N_SCAN, Horizon_SCAN, CV_32F, cv::Scalar::all(FLT_MAX));
-
+        inclinMat = cv::Mat(N_SCAN-1, Horizon_SCAN, CV_32F, cv::Scalar::all(FLT_MAX));
         imuPointerCur = 0;
         firstPointFlag = true;
         odomDeskewFlag = false;
@@ -625,6 +625,7 @@ public:
     void cloudExtraction()
     {
         int count = 0;
+        
         // extract segmented cloud for lidar odometry
         for (int i = 0; i < N_SCAN; ++i)
         {
@@ -633,6 +634,23 @@ public:
             {
                 if (rangeMat.at<float>(i,j) != FLT_MAX)
                 {
+                    if (i<N_SCAN-1)
+                    {
+                        float Ri = rangeMat.at<float>(i,j);
+                        float Ri_1 = rangeMat.at<float>(i+1,j);
+                        float dz = abs(Ri_1 * sin(LidarAngles[i+1]) - Ri * sin(LidarAngles[i]));
+                        float dx = abs(Ri_1 * cos(LidarAngles[i+1]) - Ri * cos(LidarAngles[i]));
+                        if (Ri_1 == FLT_MAX)
+                        {
+                            if (i>0)
+                            {
+                                inclinMat.at<float>(i,j) = inclinMat.at<float>(i-1,j);
+                            }else inclinMat.at<float>(i,j) = 0;
+                            
+                        }else inclinMat.at<float>(i,j) = atan2(dz,dx);
+                        
+                    }
+                    
                     // mark the points' column index for marking occlusion later
                     cloudInfo.point_col_ind[count] = j;
                     // save range info
@@ -653,6 +671,65 @@ public:
         cloudInfo.cloud_deskewed  = publishCloud(pubExtractedCloud, extractedCloud, cloudHeader.stamp, lidarFrame);
         pubLaserCloudInfo->publish(cloudInfo);
     }
+
+std::vector<double> applySavitzkyGolayFilter(const std::vector<double> &data) {
+    int window_size = savitzkyGolayCoefficients.size();
+    int half_window = window_size / 2;
+    std::vector<double> smoothed(data.size(), 0.0);
+
+    for (int i = 0; i < data.size(); ++i) {
+        double smoothed_value = 0.0;
+        for (int j = -half_window; j <= half_window; ++j) {
+            int idx = std::min(std::max(i + j, 0), (int)data.size() - 1);
+            smoothed_value += savitzkyGolayCoefficients[j + half_window] * data[idx];
+        }
+        smoothed[i] = smoothed_value;
+    }
+
+    return smoothed;
+}
+
+    std::vector<std::pair<int, int>> getNeighbours(int r, int c, int rows, int cols) {
+        std::vector<std::pair<int, int>> neighbours;
+
+        if (r > 0) neighbours.push_back({r - 1, c});
+        if (r < rows - 1) neighbours.push_back({r + 1, c});
+        if (c > 0) neighbours.push_back({r, c - 1});
+        if (c < cols - 1) neighbours.push_back({r, c + 1});
+
+        return neighbours;
+    }
+
+    void LabelGround(std::vector<std::vector<float>>& M, std::vector<std::vector<bool>>& labelled) {
+        int rows = M.size();
+        int cols = M[0].size();
+
+        for (int c = 0; c < cols; ++c) {
+            if (!labelled[0][c]) {
+                LabelGroundBFS(0, c, M, labelled);
+            }
+        }
+    }
+
+    void LabelGroundBFS(int r, int c, std::vector<std::vector<float>>& M, std::vector<std::vector<bool>>& labelled) {
+        int rows = M.size();
+        int cols = M[0].size();
+        std::queue<std::pair<int, int>> queue;
+        queue.push({r, c});
+
+        while (!queue.empty()) {
+            auto [cur_r, cur_c] = queue.front();
+            queue.pop();
+            labelled[cur_r][cur_c] = true;
+
+            for (const auto& [neigh_r, neigh_c] : getNeighbours(cur_r, cur_c, rows, cols)) {
+                if (!labelled[neigh_r][neigh_c] && std::abs(M[cur_r][cur_c] - M[neigh_r][neigh_c]) < 45*TORADAIAN) {
+                    queue.push({neigh_r, neigh_c});
+                }
+            }
+        }
+    }
+
 };
 
 int main(int argc, char** argv)
