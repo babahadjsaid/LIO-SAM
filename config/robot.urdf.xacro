@@ -27,10 +27,10 @@
   </joint>
  
 
-  <link name="imu_link"> </link>
+  <link name="imu_link1"> </link>
   <joint name="imu_joint" type="fixed">
     <parent link="velodyne" />
-    <child link="imu_link" />
+    <child link="imu_link1" />
     <origin xyz="0.003 0.25536 -0.21" rpy="0 0 -90" />
   </joint>
   

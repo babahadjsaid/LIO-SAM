@@ -76,7 +76,7 @@ public:
     string gpsTopic;
 
     //Frames
-    string lidarFrame;
+    string lidarFrame,IMUframe;
     string baselinkFrame;
     string odometryFrame;
     string mapFrame;
@@ -156,7 +156,7 @@ public:
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
-        ROBOT_HEIGHT = 0.662051;
+        ROBOT_HEIGHT = 0.4;//0.662051;
         declare_parameter("pointCloudTopic", "points");
         get_parameter("pointCloudTopic", pointCloudTopic);
         declare_parameter("imuTopic", "imu/data");
@@ -168,6 +168,9 @@ public:
 
         declare_parameter("lidarFrame", "laser_data_frame");
         get_parameter("lidarFrame", lidarFrame);
+        declare_parameter("IMU_frame", "imu/data");
+        get_parameter("IMU_frame", IMUframe);
+        
         declare_parameter("baselinkFrame", "base_link");
         get_parameter("baselinkFrame", baselinkFrame);
         declare_parameter("odometryFrame", "odom");
@@ -237,24 +240,58 @@ public:
         get_parameter("imuGravity", imuGravity);
         declare_parameter("imuRPYWeight", 0.01);
         get_parameter("imuRPYWeight", imuRPYWeight);
+        tf2_ros::Buffer tfBuffer(get_clock());
+        tf2_ros::TransformListener tfListener(tfBuffer);
+        
+        try {
+            auto transformStamped = tfBuffer.lookupTransform(lidarFrame,IMUframe, rclcpp::Time(0),rclcpp::Duration(10.0,0));
 
-        double ida[] = { 1.0,  0.0,  0.0,
+            // Extract translation
+            std::vector<double> extTransV = {
+                transformStamped.transform.translation.x,
+                transformStamped.transform.translation.y,
+                transformStamped.transform.translation.z
+            };
+
+            // Extract rotation matrix
+            tf2::Quaternion q(
+                transformStamped.transform.rotation.x,
+                transformStamped.transform.rotation.y,
+                transformStamped.transform.rotation.z,
+                transformStamped.transform.rotation.w
+            );
+            tf2::Matrix3x3 m(q);
+            std::vector<double> extRotV =  {
+            m[0][0], m[0][1], m[0][2],
+            m[1][0], m[1][1], m[1][2],
+            m[2][0], m[2][1], m[2][2] };
+            // Print extracted values
+            std::cout << "Got Static Transformation..."<<endl;
+            extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+            
+            extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+            extQRPY = Eigen::Quaterniond(q.getW(),q.getX(),q.getY(),q.getZ());
+        }
+        catch(tf2::TransformException &ex){
+            RCLCPP_WARN(get_logger(), "Didn't Find Transformation in TF buffer, because %s, loading from config file.", ex.what());
+            double ida[] = { 1.0,  0.0,  0.0,
                          0.0,  1.0,  0.0,
                          0.0,  0.0,  1.0};
-        std::vector < double > id(ida, std::end(ida));
-        declare_parameter("extrinsicRot", id);
-        get_parameter("extrinsicRot", extRotV);
-        declare_parameter("extrinsicRPY", id);
-        get_parameter("extrinsicRPY", extRPYV);
-        double zea[] = {0.0, 0.0, 0.0};
-        std::vector < double > ze(zea, std::end(zea));
-        declare_parameter("extrinsicTrans", ze);
-        get_parameter("extrinsicTrans", extTransV);
+            std::vector < double > id(ida, std::end(ida));
+            declare_parameter("extrinsicRot", id);
+            get_parameter("extrinsicRot", extRotV);
+            declare_parameter("extrinsicRPY", id);
+            get_parameter("extrinsicRPY", extRPYV);
+            double zea[] = {0.0, 0.0, 0.0};
+            std::vector < double > ze(zea, std::end(zea));
+            declare_parameter("extrinsicTrans", ze);
+            get_parameter("extrinsicTrans", extTransV);
+            extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+            extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
+            extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+            extQRPY = Eigen::Quaterniond(extRPY);
+        }
 
-        extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
-        extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
-        extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
-        extQRPY = Eigen::Quaterniond(extRPY);
 
         declare_parameter("edgeThreshold", 1.0);
         get_parameter("edgeThreshold", edgeThreshold);
@@ -321,6 +358,7 @@ public:
         sensor_msgs::msg::Imu imu_out = imu_in;//weird statment here ...
         // rotate acceleration
         Eigen::Vector3d acc(imu_in.linear_acceleration.x, imu_in.linear_acceleration.y, imu_in.linear_acceleration.z);
+        
         acc = extRot * acc;
         imu_out.linear_acceleration.x = acc.x();
         imu_out.linear_acceleration.y = acc.y();

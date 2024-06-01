@@ -50,7 +50,10 @@ public:
     {
         tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
         tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
-
+        std::string frames_list = tfBuffer->allFramesAsString();
+        
+        std::cout << "Available frames "<< tfBuffer->getAllFrameNames().size()<<" : " << std::endl;
+        std::cout << frames_list << std::endl;
         callbackGroupImuOdometry = create_callback_group(
             rclcpp::CallbackGroupType::MutuallyExclusive);
         callbackGroupLaserOdometry = create_callback_group(
