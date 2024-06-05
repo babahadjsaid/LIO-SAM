@@ -68,8 +68,9 @@ void pointCloudHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn){
     rangeFlow = CalculateSpatio_temporalDer(currentImage_,previousImage_);
 
     float V = sqrt(pow(msgIn->vel_x,2) + pow(msgIn->vel_y,2) + pow(msgIn->vel_z,2));
-    xi tmp={0,0,0};
-    tmp = CoarseEstimate(rangeFlow,dt);
+    float deltaV = sqrt(pow(ToCurrentT_.translation().x(),2) + pow(ToCurrentT_.translation().y(),2) + pow(ToCurrentT_.translation().z(),2))/dt;
+    xi tmp={0,0,deltaV};
+    tmp = CoarseEstimate(rangeFlow,dt,deltaV);
     //tmp = FineEstimate(tmp,rangeFlow,V,dt);
     cout << "params: R': "<< tmp.R0<<" omega': "<<tmp.omega0<<" alpha: "<<tmp.alpha0<<endl;
     cv::Mat out;
@@ -125,7 +126,7 @@ void displayImage(cv::Mat &image){ // this is just pieces of code not yet implem
     frame.release();
 }
 
-void applyMedianFilter(cv::Mat& currentImage, cv::Mat& previousImage, int kernelSize=3)
+void applyMedianFilter(cv::Mat& currentImage, cv::Mat& previousImage, int kernelSize=5)
 {
     cv::medianBlur(currentImage, currentImage, kernelSize);
     cv::medianBlur(previousImage, previousImage, kernelSize);
@@ -169,7 +170,7 @@ float weightFunction(float rho) {
 
 
 
-xi CoarseEstimate(const vector<cv::Mat>& rangeflow, double dt) {
+xi CoarseEstimate(const vector<cv::Mat>& rangeflow, double dt, float V) {
     xi estimatedFlow = {0, 0, 0};
     int rows = rangeflow[0].rows;
     int cols = rangeflow[0].cols;
@@ -178,18 +179,18 @@ xi CoarseEstimate(const vector<cv::Mat>& rangeflow, double dt) {
     float weight;
     Eigen::VectorXf Y(3);
     Eigen::MatrixXf M(3,3);
-    for (int iter = 0; iter < 40; ++iter) {
+    for (int iter = 0; iter < 20; ++iter) {
         int index = 0;
         float a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0, b1 = 0, b2 = 0, b3 = 0;
         for (int i = 0; i < rows; ++i) {
             double dw = (i == 0) ? 2*TORADAIAN : (LidarAngles[i] - LidarAngles[i-1]);
             for (int j = 0; j < cols; ++j) {
-                float omega = rangeflow[1].at<float>(i, j) / dw;
-                float alpha = rangeflow[2].at<float>(i, j) / ANGULARRESOLUTION_X;
-                float R_t = rangeflow[3].at<float>(i, j) / dt;
+                float omega = rangeflow[1].at<float>(i, j) /dw;
+                float alpha = rangeflow[2].at<float>(i, j) /ANGULARRESOLUTION_X;
+                float R_t = rangeflow[3].at<float>(i, j) /dt;
                 float rho = geometricConstraintResidual(estimatedFlow, omega, alpha, R_t);
                 
-                rho = cauchyFunction(rho);
+                //rho = cauchyFunction(rho);
                 weight = weightFunction(rho);
                 
                 
@@ -210,17 +211,13 @@ xi CoarseEstimate(const vector<cv::Mat>& rangeflow, double dt) {
             a2, a4, a5,
             a3, a5, a6;
         Y << b1, b2, b3;
-        Eigen::VectorXf B ;
-        Eigen::MatrixXf AtA, AtB;
-        AtA = M.transpose()*M;
-        AtB = M.transpose()*Y;
-        B = AtA.ldlt().solve(AtB);
+        Eigen::VectorXf B = M.inverse() * Y;
         if (isnan(B.norm())) continue;
         xi newEstimate = {B(0), B(1), B(2)};
         change = abs(newEstimate.omega0 - estimatedFlow.omega0) +
                         abs(newEstimate.alpha0 - estimatedFlow.alpha0) +
                         abs(newEstimate.R0 - estimatedFlow.R0);
-        if (change < 0.001) {
+        if (change < 0.00001) {
             estimatedFlow = newEstimate;
             break;
         }
@@ -247,8 +244,8 @@ xi FineEstimate(xi estimatedFlow, const vector<cv::Mat>& rangeflow,double V, dou
             double dw = (i == 0) ? 2*TORADAIAN : (LidarAngles[i] - LidarAngles[i-1]);
             for (int j = 0; j < cols; ++j) {
                 float R = rangeflow[0].at<float>(i, j) ;
-                float omega = rangeflow[1].at<float>(i, j) / dw;
-                float alpha = rangeflow[2].at<float>(i, j) / ANGULARRESOLUTION_X;
+                float omega = rangeflow[1].at<float>(i, j)/dw;
+                float alpha = rangeflow[2].at<float>(i, j)/ANGULARRESOLUTION_X;
                 float R_t = rangeflow[3].at<float>(i, j) / dt;
                 float rho = geometricConstraintResidual(estimatedFlow, omega, alpha, R_t,LidarAngles[i],j*ANGULARRESOLUTION_X,R,V,dt);
                 
@@ -271,7 +268,11 @@ xi FineEstimate(xi estimatedFlow, const vector<cv::Mat>& rangeflow,double V, dou
             a2, a4, a5,
             a3, a5, a6;
         Y << b1, b2, b3;
-        Eigen::VectorXf B = M.inverse() * Y;
+        Eigen::VectorXf B ;
+        Eigen::MatrixXf AtA, AtB;
+        AtA = M.transpose()*M;
+        AtB = M.transpose()*Y;
+        B = AtA.ldlt().solve(AtB);
         if (isnan(B.norm())) continue;
         
         xi newEstimate = {B(0), B(1), B(2)};
@@ -301,7 +302,7 @@ void PointsSegmentation(xi estimatedFlow, const vector<cv::Mat>& rangeflow,float
             float alpha = rangeflow[2].at<float>(i, j) / ANGULARRESOLUTION_X;
             float R_t = rangeflow[3].at<float>(i, j) / dt;
             float& Rout = out.at<float>(i, j);
-            Rout = geometricConstraintResidual(estimatedFlow, omega, alpha, R_t,LidarAngles[i],j*ANGULARRESOLUTION_X,R,V,dt);
+            Rout = geometricConstraintResidual(estimatedFlow, omega, alpha, R_t);
             if (Rout> max)
             {
                 max = Rout;
