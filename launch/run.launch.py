@@ -74,19 +74,19 @@ def generate_launch_description():
             name='lio_sam_mapOptimization',
             parameters=[parameter_file],
             output='screen'
-        ),
-        Node(
-            package='imu_filter_madgwick',
-            executable='imu_filter_madgwick_node',
-            name='imu_filter',
-            output='screen',
-            parameters=[os.path.join(config_dir, 'imu_filter.yaml')],
-        ), 
-        Node(
-            package='rs_to_velodyne',
-            executable='rs_to_velodyne',
-            name='rs_converter',
-            parameters=[config_rslidar],
-            output='screen'
-        )
+        )#,
+        # Node(
+        #     package='imu_filter_madgwick',
+        #     executable='imu_filter_madgwick_node',
+        #     name='imu_filter',
+        #     output='screen',
+        #     parameters=[os.path.join(config_dir, 'imu_filter.yaml')],
+        # ), 
+        # Node(
+        #     package='rs_to_velodyne',
+        #     executable='rs_to_velodyne',
+        #     name='rs_converter',
+        #     parameters=[config_rslidar],
+        #     output='screen'
+        # )
     ])
