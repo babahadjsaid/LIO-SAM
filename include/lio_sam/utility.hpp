@@ -156,7 +156,7 @@ public:
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
-        ROBOT_HEIGHT = 0.4;//0.662051;
+        ROBOT_HEIGHT = 0.40284475 ;//0.662051;
         declare_parameter("pointCloudTopic", "points");
         get_parameter("pointCloudTopic", pointCloudTopic);
         declare_parameter("imuTopic", "imu/data");
@@ -175,7 +175,7 @@ public:
         get_parameter("baselinkFrame", baselinkFrame);
         declare_parameter("odometryFrame", "odom");
         get_parameter("odometryFrame", odometryFrame);
-        declare_parameter("mapFrame", "map");
+        declare_parameter("mapFrame", "robot_centric");
         get_parameter("mapFrame", mapFrame);
         declare_parameter("mapCentricFrame", "map-centric");
         get_parameter("mapCentricFrame", mapCentricFrame);

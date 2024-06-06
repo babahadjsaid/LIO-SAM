@@ -12,7 +12,7 @@
     IMU_frame: "imu_link1"
     baselinkFrame: "base_link"
     odometryFrame: "odom"
-    mapFrame: "map"
+    mapFrame: "robot_centric"
 
     # GPS Settings
     useImuHeadingInitialization: false           # if using GPS data, set to "true"
