@@ -359,8 +359,8 @@ public:
         {
             const auto &pointFrom = cloudIn->points[i];
            
-            cloudOut->points[i].x = cosz * (pointFrom.x - transformIn->x) + sinz * (pointFrom.y - transformIn->y) ;
-            cloudOut->points[i].y = -sinz * (pointFrom.x - transformIn->x) + cosz * (pointFrom.y - transformIn->y) ;
+            cloudOut->points[i].x = pointFrom.x - transformIn->x ;
+            cloudOut->points[i].y = pointFrom.y - transformIn->y ;
             cloudOut->points[i].z = pointFrom.z - transformIn->z + ROBOT_HEIGHT;
             cloudOut->points[i].intensity = pointFrom.intensity;
         }
