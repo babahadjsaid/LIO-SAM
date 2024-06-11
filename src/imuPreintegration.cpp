@@ -513,8 +513,12 @@ public:
 
         // predict odometry
         gtsam::NavState currentState = imuIntegratorImu_->predict(prevStateOdom, prevBiasOdom);
+        
+        
         gtsam::Values result = optimizer.calculateEstimate();
-        gtsam::Matrix covarianceMatrix = optimizer.marginalCovariance(result.size()-1);
+        gtsam::Matrix covarianceMatrix = optimizer.marginalCovariance(X(key-1));
+        
+        
         // publish odometry
         auto odometry = nav_msgs::msg::Odometry();
         odometry.header.stamp = thisImu.header.stamp;
@@ -541,8 +545,6 @@ public:
 
             }
         }
-        
-        
         odometry.twist.twist.linear.x = currentState.velocity().x();
         odometry.twist.twist.linear.y = currentState.velocity().y();
         odometry.twist.twist.linear.z = currentState.velocity().z();
