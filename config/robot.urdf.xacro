@@ -2,10 +2,10 @@
 <robot name="lio" xmlns:xacro="http://tixiaoshan.github.io/">
   <xacro:property name="PI" value="3.1415926535897931" />
 
-  <link name="world"></link>
+  <link name="map"></link>
   <link name="odom"></link>
   <joint name="odom_joint" type="fixed">
-    <parent link="world" />
+    <parent link="map" />
     <child link="odom" />
     <origin xyz="0 0 0" rpy="0 0 0" />
   </joint>
