@@ -150,6 +150,13 @@ public:
     Eigen::Affine3f incrementalOdometryAffineBack;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
+    float mappingCornerLeafSize,z_tollerance,gpsCovThreshold,poseCovThreshold,rotation_tollerance, mappingSurfLeafSize,imuRPYWeight,historyKeyframeSearchRadius, historyKeyframeSearchTimeDiff, historyKeyframeFitnessScore, loopClosureFrequency,surroundingKeyframeDensity,globalMapVisualizationSearchRadius,surroundingkeyframeAddingDistThreshold,surroundingkeyframeAddingAngleThreshold;
+    double mappingProcessInterval,ROBOT_HEIGHT = 0.662051,surroundingKeyframeSearchRadius;
+    std::string savePCDDirectory, gpsTopic,odometryFrame;
+    int N_SCAN, Horizon_SCAN,historyKeyframeSearchNum,surfFeatureMinValidNum,edgeFeatureMinValidNum,surroundingKeyframeSize,numberOfCores;
+    bool savePCD,loopClosureEnableFlag,useImuHeadingInitialization,useGpsElevation;
+    SensorType sensor = SensorType::OUSTER;
+
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("lio_sam_mapOptimization", options)
     {
@@ -157,7 +164,7 @@ public:
         parameters.relinearizeThreshold = 0.1;
         parameters.relinearizeSkip = 1;
         isam = new ISAM2(parameters);
-
+        getParmeters();
         pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("lio_sam/mapping/trajectory", 1);
         pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("lio_sam/mapping/map_global", 1);
         pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("lio_sam/mapping/odometry", qos);
@@ -294,6 +301,101 @@ public:
 
         matP.setZero();
     }
+
+    void getParmeters(){
+        declare_parameter("savePCDDirectory", "/Downloads/LOAM/");
+        get_parameter("savePCDDirectory", savePCDDirectory);
+        declare_parameter("savePCD", false);
+        get_parameter("savePCD", savePCD);
+        declare_parameter("mappingCornerLeafSize", 0.2);
+        get_parameter("mappingCornerLeafSize", mappingCornerLeafSize);
+        declare_parameter("mappingSurfLeafSize", 0.4);
+        get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
+        declare_parameter("gpsTopic", "lio_sam/odometry/gps");
+        get_parameter("gpsTopic", gpsTopic);
+        declare_parameter("surroundingKeyframeDensity", 2.0);
+        get_parameter("surroundingKeyframeDensity", surroundingKeyframeDensity);
+        declare_parameter("mappingProcessInterval", 0.15);
+        get_parameter("mappingProcessInterval", mappingProcessInterval);
+        declare_parameter("N_SCAN", 64);
+        get_parameter("N_SCAN", N_SCAN);
+        declare_parameter("Horizon_SCAN", 512);
+        get_parameter("Horizon_SCAN", Horizon_SCAN);
+        declare_parameter("globalMapVisualizationSearchRadius", 1000.0);
+        get_parameter("globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius);
+        declare_parameter("odometryFrame", "odom");
+        get_parameter("odometryFrame", odometryFrame);
+        declare_parameter("loopClosureEnableFlag", true);
+        get_parameter("loopClosureEnableFlag", loopClosureEnableFlag);
+        declare_parameter("loopClosureFrequency", 1.0);
+        get_parameter("loopClosureFrequency", loopClosureFrequency);
+        declare_parameter("historyKeyframeSearchRadius", 15.0);
+        get_parameter("historyKeyframeSearchRadius", historyKeyframeSearchRadius);
+        declare_parameter("historyKeyframeSearchTimeDiff", 30.0);
+        get_parameter("historyKeyframeSearchTimeDiff", historyKeyframeSearchTimeDiff);
+        declare_parameter("historyKeyframeSearchNum", 25);
+        get_parameter("historyKeyframeSearchNum", historyKeyframeSearchNum);
+        declare_parameter("historyKeyframeFitnessScore", 0.3);
+        get_parameter("historyKeyframeFitnessScore", historyKeyframeFitnessScore);
+        declare_parameter("useImuHeadingInitialization", false);
+        get_parameter("useImuHeadingInitialization", useImuHeadingInitialization);
+        declare_parameter("surroundingKeyframeSize", 50);
+        get_parameter("surroundingKeyframeSize", surroundingKeyframeSize);
+        declare_parameter("surroundingKeyframeSearchRadius", 50.0);
+        get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
+        declare_parameter("edgeFeatureMinValidNum", 10);
+        get_parameter("edgeFeatureMinValidNum", edgeFeatureMinValidNum);
+        declare_parameter("surfFeatureMinValidNum", 100);
+        get_parameter("surfFeatureMinValidNum", surfFeatureMinValidNum);
+        declare_parameter("imuRPYWeight", 0.01);
+        get_parameter("imuRPYWeight", imuRPYWeight);
+        declare_parameter("z_tollerance", 1000.0);
+        get_parameter("z_tollerance", z_tollerance);
+        declare_parameter("rotation_tollerance", 1000.0);
+        get_parameter("rotation_tollerance", rotation_tollerance);
+        declare_parameter("surroundingkeyframeAddingDistThreshold", 1.0);
+        get_parameter("surroundingkeyframeAddingDistThreshold", surroundingkeyframeAddingDistThreshold);
+        declare_parameter("surroundingkeyframeAddingAngleThreshold", 0.2);
+        get_parameter("surroundingkeyframeAddingAngleThreshold", surroundingkeyframeAddingAngleThreshold);
+        declare_parameter("useGpsElevation", false);
+        get_parameter("useGpsElevation", useGpsElevation);
+        declare_parameter("gpsCovThreshold", 2.0);
+        get_parameter("gpsCovThreshold", gpsCovThreshold);
+        declare_parameter("poseCovThreshold", 25.0);
+        get_parameter("poseCovThreshold", poseCovThreshold);
+        declare_parameter("numberOfCores", 4);
+        get_parameter("numberOfCores", numberOfCores);
+
+
+
+
+
+        std::string sensorStr;
+        declare_parameter("sensor", "ouster");
+        get_parameter("sensor", sensorStr);
+        if (sensorStr == "velodyne")
+        {
+            sensor = SensorType::VELODYNE;
+        }
+        else if (sensorStr == "ouster")
+        {
+            sensor = SensorType::OUSTER;
+        }
+        else if (sensorStr == "livox")
+        {
+            sensor = SensorType::LIVOX;
+        }
+        else
+        {
+            RCLCPP_ERROR_STREAM(
+                get_logger(),
+                "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox'): " << sensorStr);
+            rclcpp::shutdown();
+        }
+
+
+
+    }   
 
     void laserCloudInfoHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn)
     {

@@ -45,12 +45,13 @@ public:
 
     double lidarOdomTime = -1;
     deque<nav_msgs::msg::Odometry> imuOdomQueue;
+    std::string odomTopic,lidarFrame,baselinkFrame,odometryFrame;
 
     TransformFusion(const rclcpp::NodeOptions & options) : ParamServer("lio_sam_transformFusion", options)
     {
         tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
         tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
-
+        getParameters();
         callbackGroupImuOdometry = create_callback_group(
             rclcpp::CallbackGroupType::MutuallyExclusive);
         callbackGroupLaserOdometry = create_callback_group(
@@ -74,6 +75,18 @@ public:
         pubImuPath = create_publisher<nav_msgs::msg::Path>("lio_sam/imu/path", qos);
 
         tfBroadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+    }
+
+    void getParameters(){
+        
+        declare_parameter("odomTopic", "lio_sam/odometry/imu");
+        get_parameter("odomTopic", odomTopic);
+        declare_parameter("lidarFrame", "laser_data_frame");
+        get_parameter("lidarFrame", lidarFrame);
+        declare_parameter("baselinkFrame", "base_link");
+        get_parameter("baselinkFrame", baselinkFrame);
+        declare_parameter("odometryFrame", "odom");
+        get_parameter("odometryFrame", odometryFrame);
     }
 
     Eigen::Isometry3d odom2affine(nav_msgs::msg::Odometry odom)
@@ -171,6 +184,14 @@ public:
     }
 };
 
+
+
+
+
+
+
+
+
 class IMUPreintegration : public ParamServer
 {
 public:
@@ -220,8 +241,12 @@ public:
 
     int key = 1;
 
-    gtsam::Pose3 imu2Lidar = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
-    gtsam::Pose3 lidar2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    gtsam::Pose3 imu2Lidar,lidar2Imu;
+    float imuAccNoise,imuGyrNoise,imuAccBiasN,imuGyrBiasN,imuGravity;
+    string odomTopic,imuTopic,odometryFrame;
+    vector<double> extTransV;
+    Eigen::Vector3d extTrans;
+
 
     IMUPreintegration(const rclcpp::NodeOptions & options) :
             ParamServer("lio_sam_imu_preintegration", options)
@@ -230,7 +255,7 @@ public:
             rclcpp::CallbackGroupType::MutuallyExclusive);
         callbackGroupOdom = create_callback_group(
             rclcpp::CallbackGroupType::MutuallyExclusive);
-
+        getParameters();
         auto imuOpt = rclcpp::SubscriptionOptions();
         imuOpt.callback_group = callbackGroupImu;
         auto odomOpt = rclcpp::SubscriptionOptions();
@@ -246,7 +271,9 @@ public:
             odomOpt);
 
         pubImuOdometry = create_publisher<nav_msgs::msg::Odometry>(odomTopic+"_incremental", qos_imu);
-
+        gtsam::Pose3 imu2Lidar = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
+        gtsam::Pose3 lidar2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    
         boost::shared_ptr<gtsam::PreintegrationParams> p = gtsam::PreintegrationParams::MakeSharedU(imuGravity);
         p->accelerometerCovariance  = gtsam::Matrix33::Identity(3,3) * pow(imuAccNoise, 2); // acc white noise in continuous
         p->gyroscopeCovariance      = gtsam::Matrix33::Identity(3,3) * pow(imuGyrNoise, 2); // gyro white noise in continuous
@@ -262,6 +289,42 @@ public:
         
         imuIntegratorImu_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for IMU message thread
         imuIntegratorOpt_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for optimization        
+    }
+    void getParameters(){
+        
+        declare_parameter("odomTopic", "lio_sam/odometry/imu");
+        get_parameter("odomTopic", odomTopic);
+        declare_parameter("imuTopic", "imu/data");
+        get_parameter("imuTopic", imuTopic);
+        declare_parameter("imuAccNoise", 9e-4);
+        get_parameter("imuAccNoise", imuAccNoise);
+        declare_parameter("imuGyrNoise", 1.6e-4);
+        get_parameter("imuGyrNoise", imuGyrNoise);
+        declare_parameter("imuAccBiasN", 5e-4);
+        get_parameter("imuAccBiasN", imuAccBiasN);
+        declare_parameter("imuGyrBiasN", 7e-5);
+        get_parameter("imuGyrBiasN", imuGyrBiasN);
+        declare_parameter("imuGravity", 9.80511);
+        get_parameter("imuGravity", imuGravity);
+        double zea[] = {0.0, 0.0, 0.0};
+        std::vector < double > ze(zea, std::end(zea));
+        declare_parameter("extrinsicTrans", ze);
+        get_parameter("extrinsicTrans", extTransV);
+        extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+        declare_parameter("odometryFrame", "odom");
+        get_parameter("odometryFrame", odometryFrame);
+        double ida[] = { 1.0,  0.0,  0.0,
+                         0.0,  1.0,  0.0,
+                         0.0,  0.0,  1.0};
+        std::vector < double > id(ida, std::end(ida));
+        declare_parameter("extrinsicRot", id);
+        get_parameter("extrinsicRot", extRotV);
+        declare_parameter("extrinsicRPY", id);
+        get_parameter("extrinsicRPY", extRPYV);
+
+        extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+        extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
+        extQRPY = Eigen::Quaterniond(extRPY);
     }
 
     void resetOptimization()
