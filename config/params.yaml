@@ -8,11 +8,11 @@
     gpsTopic: "odometry/gpsz"                    # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
-    lidarFrame: "velodyne"
+    lidarFrame: "Rs_lidar"
     baselinkFrame: "base_link"
     odometryFrame: "odom"
-    mapFrame: "map"
-
+    mapFrame: "map_centric"
+    imuFrame: "imu_link"
     # GPS Settings
     useImuHeadingInitialization: false           # if using GPS data, set to "true"
     useGpsElevation: false                       # if GPS elevation is bad, set to "false"
@@ -33,10 +33,10 @@
     lidarMaxRange: 50.0                        # default: 1000.0, maximum lidar range to be used
 
     # IMU Settings
-    imuAccNoise: 1.2e-03 #3.9939570888238808e-03
-    imuGyrNoise: 2.0e-01 #1.5636343949698187e-03
-    imuAccBiasN: 15.0e-06 #6.4356659353532566e-05
-    imuGyrBiasN: 8.72222e-02 #3.5640318696367613e-05
+    imuAccNoise: 0.007688347 #3.9939570888238808e-03
+    imuGyrNoise: 0.00106911801 #1.5636343949698187e-03
+    imuAccBiasN: 0.000073086611 #6.4356659353532566e-05
+    imuGyrBiasN: 0.000005432628 #3.5640318696367613e-05
 
     imuGravity: 9.81
     imuRPYWeight: 0.01
@@ -66,7 +66,7 @@
 
     # CPU Params
     numberOfCores: 12                              # number of cores for mapping optimization
-    mappingProcessInterval: 0.15                  # seconds, regulate mapping frequency
+    mappingProcessInterval: 0.05                  # seconds, regulate mapping frequency
 
     # Surrounding map
     surroundingkeyframeAddingDistThreshold: 0.5   # meters, regulate keyframe adding threshold
@@ -76,7 +76,7 @@
     # (when loop closure disabled)
 
     # Loop closure
-    loopClosureEnableFlag: true
+    loopClosureEnableFlag: false
     loopClosureFrequency: 1.0                     # Hz, regulate loop closure constraint add frequency
     surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
     historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from
@@ -88,6 +88,6 @@
     historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
 
     # Visualization
-    globalMapVisualizationSearchRadius: 20.0    # meters, global map visualization radius
+    globalMapVisualizationSearchRadius: 10.0    # 5 meters, global map visualization radius
     globalMapVisualizationPoseDensity: 10.0       # meters, global map visualization keyframe density
     globalMapVisualizationLeafSize: 1.0           # meters, global map visualization cloud density

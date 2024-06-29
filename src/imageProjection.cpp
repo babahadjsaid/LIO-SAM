@@ -90,19 +90,11 @@ private:
 
     vector<int> columnIdnCountVec;
 
-    string pointCloudTopic;
-    string imuTopic;
-    string odomTopic;
-    int N_SCAN,Horizon_SCAN,downsampleRate;
-    float lidarMinRange,lidarMaxRange;
-    SensorType sensor = SensorType::OUSTER;
-    string lidarFrame;
 
 public:
     ImageProjection(const rclcpp::NodeOptions & options) :
             ParamServer("lio_sam_imageProjection", options), deskewFlag(0)
     {
-        getParameters();
         callbackGroupLidar = create_callback_group(
             rclcpp::CallbackGroupType::MutuallyExclusive);
         callbackGroupImu = create_callback_group(
@@ -159,62 +151,6 @@ public:
         resetParameters();
     }
 
-    void getParameters(){
-        declare_parameter("pointCloudTopic", "points");
-        get_parameter("pointCloudTopic", pointCloudTopic);
-        declare_parameter("imuTopic", "imu/data");
-        get_parameter("imuTopic", imuTopic);
-        declare_parameter("odomTopic", "lio_sam/odometry/imu");
-        get_parameter("odomTopic", odomTopic);
-        declare_parameter("N_SCAN", 64);
-        get_parameter("N_SCAN", N_SCAN);
-        declare_parameter("Horizon_SCAN", 512);
-        get_parameter("Horizon_SCAN", Horizon_SCAN);
-        declare_parameter("lidarMinRange", 5.5);
-        get_parameter("lidarMinRange", lidarMinRange);
-        declare_parameter("lidarMaxRange", 1000.0);
-        get_parameter("lidarMaxRange", lidarMaxRange);
-        declare_parameter("downsampleRate", 1);
-        get_parameter("downsampleRate", downsampleRate);
-        declare_parameter("lidarFrame", "laser_data_frame");
-        get_parameter("lidarFrame", lidarFrame);
-        double ida[] = { 1.0,  0.0,  0.0,
-                         0.0,  1.0,  0.0,
-                         0.0,  0.0,  1.0};
-        std::vector < double > id(ida, std::end(ida));
-        declare_parameter("extrinsicRot", id);
-        get_parameter("extrinsicRot", extRotV);
-        declare_parameter("extrinsicRPY", id);
-        get_parameter("extrinsicRPY", extRPYV);
-
-        extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
-        extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
-        extQRPY = Eigen::Quaterniond(extRPY);
-        std::string sensorStr;
-        declare_parameter("sensor", "ouster");
-        get_parameter("sensor", sensorStr);
-        if (sensorStr == "velodyne")
-        {
-            sensor = SensorType::VELODYNE;
-        }
-        else if (sensorStr == "ouster")
-        {
-            sensor = SensorType::OUSTER;
-        }
-        else if (sensorStr == "livox")
-        {
-            sensor = SensorType::LIVOX;
-        }
-        else
-        {
-            RCLCPP_ERROR_STREAM(
-                get_logger(),
-                "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox'): " << sensorStr);
-            rclcpp::shutdown();
-        }
-
-    }
-
     void resetParameters()
     {
         laserCloudIn->clear();
@@ -245,7 +181,23 @@ public:
         std::lock_guard<std::mutex> lock1(imuLock);
         imuQueue.push_back(thisImu);
 
-        }
+        // debug IMU data
+        // cout << std::setprecision(6);
+        // cout << "IMU acc: " << endl;
+        // cout << "x: " << thisImu.linear_acceleration.x << 
+        //       ", y: " << thisImu.linear_acceleration.y << 
+        //       ", z: " << thisImu.linear_acceleration.z << endl;
+        // cout << "IMU gyro: " << endl;
+        // cout << "x: " << thisImu.angular_velocity.x << 
+        //       ", y: " << thisImu.angular_velocity.y << 
+        //       ", z: " << thisImu.angular_velocity.z << endl;
+        // double imuRoll, imuPitch, imuYaw;
+        // tf::Quaternion orientation;
+        // tf::quaternionMsgToTF(thisImu.orientation, orientation);
+        // tf::Matrix3x3(orientation).getRPY(imuRoll, imuPitch, imuYaw);
+        // cout << "IMU roll pitch yaw: " << endl;
+        // cout << "roll: " << imuRoll << ", pitch: " << imuPitch << ", yaw: " << imuYaw << endl << endl;
+    }
 
     void odometryHandler(const nav_msgs::msg::Odometry::SharedPtr odometryMsg)
     {

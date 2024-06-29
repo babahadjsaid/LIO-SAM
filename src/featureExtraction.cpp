@@ -36,10 +36,6 @@ public:
     float *cloudCurvature;
     int *cloudNeighborPicked;
     int *cloudLabel;
-    int N_SCAN,Horizon_SCAN;
-    float odometrySurfLeafSize,edgeThreshold,surfThreshold;
-    std::string lidarFrame;
-
 
     FeatureExtraction(const rclcpp::NodeOptions & options) :
         ParamServer("lio_sam_featureExtraction", options)
@@ -47,7 +43,7 @@ public:
         subLaserCloudInfo = create_subscription<lio_sam::msg::CloudInfo>(
             "lio_sam/deskew/cloud_info", qos,
             std::bind(&FeatureExtraction::laserCloudInfoHandler, this, std::placeholders::_1));
-        getParameters();
+
         pubLaserCloudInfo = create_publisher<lio_sam::msg::CloudInfo>(
             "lio_sam/feature/cloud_info", qos);
         pubCornerPoints = create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -71,21 +67,6 @@ public:
         cloudCurvature = new float[N_SCAN*Horizon_SCAN];
         cloudNeighborPicked = new int[N_SCAN*Horizon_SCAN];
         cloudLabel = new int[N_SCAN*Horizon_SCAN];
-    }
-
-    void getParameters(){
-        declare_parameter("N_SCAN", 64);
-        get_parameter("N_SCAN", N_SCAN);
-        declare_parameter("Horizon_SCAN", 512);
-        get_parameter("Horizon_SCAN", Horizon_SCAN);
-        declare_parameter("odometrySurfLeafSize", 0.4);
-        get_parameter("odometrySurfLeafSize", odometrySurfLeafSize);
-        declare_parameter("edgeThreshold", 1.0);
-        get_parameter("edgeThreshold", edgeThreshold);
-        declare_parameter("surfThreshold", 0.1);
-        get_parameter("surfThreshold", surfThreshold);
-        declare_parameter("lidarFrame", "laser_data_frame");
-        get_parameter("lidarFrame", lidarFrame);
     }
 
     void laserCloudInfoHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn)

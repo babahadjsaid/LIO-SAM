@@ -37,8 +37,8 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
-#include <tf2_eigen/tf2_eigen.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <tf2_eigen/tf2_eigen.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <vector>
 #include <cmath>
@@ -67,24 +67,286 @@ enum class SensorType { VELODYNE, OUSTER, LIVOX };
 class ParamServer : public rclcpp::Node
 {
 public:
-    
-    Eigen::Matrix3d extRot;
-    Eigen::Matrix3d extRPY;
-    Eigen::Quaterniond extQRPY;
+    std::string robot_id;
+
+    //Topics
+    string pointCloudTopic;
+    string imuTopic;
+    string odomTopic;
+    string gpsTopic;
+
+    //Frames
+    string lidarFrame,imuFrame;
+    string baselinkFrame;
+    string odometryFrame;
+    string mapFrame;
+    string mapCentricFrame;
+
+    // GPS Settings
+    bool useImuHeadingInitialization;
+    bool useGpsElevation;
+    float gpsCovThreshold;
+    float poseCovThreshold;
+
+    // Save pcd
+    bool savePCD;
+    string savePCDDirectory;
+
+    // Lidar Sensor Configuration
+    SensorType sensor = SensorType::OUSTER;
+    int N_SCAN;
+    int Horizon_SCAN;
+    int downsampleRate;
+    float lidarMinRange;
+    float lidarMaxRange;
+
+    // IMU
+    float imuAccNoise;
+    float imuGyrNoise;
+    float imuAccBiasN;
+    float imuGyrBiasN;
+    float imuGravity;
+    float imuRPYWeight;
     vector<double> extRotV;
     vector<double> extRPYV;
-    
+    vector<double> extTransV;
+    Eigen::Matrix3d extRot;
+    Eigen::Matrix3d extRPY;
+    Eigen::Vector3d extTrans;
+    Eigen::Quaterniond extQRPY;
+
+    // LOAM
+    float edgeThreshold;
+    float surfThreshold;
+    int edgeFeatureMinValidNum;
+    int surfFeatureMinValidNum;
+
+    // voxel filter paprams
+    float odometrySurfLeafSize;
+    float mappingCornerLeafSize;
+    float mappingSurfLeafSize ;
+
+    float z_tollerance;
+    float rotation_tollerance;
+
+    // CPU Params
+    int numberOfCores;
+    double mappingProcessInterval;
+
+    // Surrounding map
+    float surroundingkeyframeAddingDistThreshold;
+    float surroundingkeyframeAddingAngleThreshold;
+    float surroundingKeyframeDensity;
+    float surroundingKeyframeSearchRadius;
+
+    // Loop closure
+    bool  loopClosureEnableFlag;
+    float loopClosureFrequency;
+    int   surroundingKeyframeSize;
+    float historyKeyframeSearchRadius;
+    float historyKeyframeSearchTimeDiff;
+    int   historyKeyframeSearchNum;
+    float historyKeyframeFitnessScore;
+    float ROBOT_HEIGHT;
+
+    // global map visualization radius
+    float globalMapVisualizationSearchRadius;
+    float globalMapVisualizationPoseDensity;
+    float globalMapVisualizationLeafSize;
+    std::shared_ptr<tf2_ros::Buffer> tfBuffer;
+    std::shared_ptr<tf2_ros::TransformListener> tfListener;
+     
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {
+        tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
+        tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
+        ROBOT_HEIGHT = 0.662051;
+        declare_parameter("pointCloudTopic", "points");
+        get_parameter("pointCloudTopic", pointCloudTopic);
+        declare_parameter("imuTopic", "imu/data");
+        get_parameter("imuTopic", imuTopic);
+        declare_parameter("odomTopic", "lio_sam/odometry/imu");
+        get_parameter("odomTopic", odomTopic);
+        declare_parameter("gpsTopic", "lio_sam/odometry/gps");
+        get_parameter("gpsTopic", gpsTopic);
+
+        declare_parameter("lidarFrame", "Rs_lidar");
+        get_parameter("lidarFrame", lidarFrame);
+        declare_parameter("imuFrame", "imu_link");
+        get_parameter("imuFrame", imuFrame);
+        declare_parameter("baselinkFrame", "base_link");
+        get_parameter("baselinkFrame", baselinkFrame);
+        declare_parameter("odometryFrame", "odom");
+        get_parameter("odometryFrame", odometryFrame);
+        declare_parameter("mapFrame", "map");
+        get_parameter("mapFrame", mapFrame);
+        declare_parameter("mapCentricFrame", "map-centric");
+        get_parameter("mapCentricFrame", mapCentricFrame);
+
+        declare_parameter("useImuHeadingInitialization", false);
+        get_parameter("useImuHeadingInitialization", useImuHeadingInitialization);
+        declare_parameter("useGpsElevation", false);
+        get_parameter("useGpsElevation", useGpsElevation);
+        declare_parameter("gpsCovThreshold", 2.0);
+        get_parameter("gpsCovThreshold", gpsCovThreshold);
+        declare_parameter("poseCovThreshold", 25.0);
+        get_parameter("poseCovThreshold", poseCovThreshold);
+
+        declare_parameter("savePCD", false);
+        get_parameter("savePCD", savePCD);
+        declare_parameter("savePCDDirectory", "/Downloads/LOAM/");
+        get_parameter("savePCDDirectory", savePCDDirectory);
+
+        std::string sensorStr;
+        declare_parameter("sensor", "ouster");
+        get_parameter("sensor", sensorStr);
+        if (sensorStr == "velodyne")
+        {
+            sensor = SensorType::VELODYNE;
+        }
+        else if (sensorStr == "ouster")
+        {
+            sensor = SensorType::OUSTER;
+        }
+        else if (sensorStr == "livox")
+        {
+            sensor = SensorType::LIVOX;
+        }
+        else
+        {
+            RCLCPP_ERROR_STREAM(
+                get_logger(),
+                "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox'): " << sensorStr);
+            rclcpp::shutdown();
+        }
+
+        declare_parameter("N_SCAN", 64);
+        get_parameter("N_SCAN", N_SCAN);
+        declare_parameter("Horizon_SCAN", 512);
+        get_parameter("Horizon_SCAN", Horizon_SCAN);
+        declare_parameter("downsampleRate", 1);
+        get_parameter("downsampleRate", downsampleRate);
+        declare_parameter("lidarMinRange", 5.5);
+        get_parameter("lidarMinRange", lidarMinRange);
+        declare_parameter("lidarMaxRange", 1000.0);
+        get_parameter("lidarMaxRange", lidarMaxRange);
+
+        declare_parameter("imuAccNoise", 9e-4);
+        get_parameter("imuAccNoise", imuAccNoise);
+        declare_parameter("imuGyrNoise", 1.6e-4);
+        get_parameter("imuGyrNoise", imuGyrNoise);
+        declare_parameter("imuAccBiasN", 5e-4);
+        get_parameter("imuAccBiasN", imuAccBiasN);
+        declare_parameter("imuGyrBiasN", 7e-5);
+        get_parameter("imuGyrBiasN", imuGyrBiasN);
+        declare_parameter("imuGravity", 9.80511);
+        get_parameter("imuGravity", imuGravity);
+        declare_parameter("imuRPYWeight", 0.01);
+        get_parameter("imuRPYWeight", imuRPYWeight);
+
+        double ida[] = { 1.0,  0.0,  0.0,
+                         0.0,  1.0,  0.0,
+                         0.0,  0.0,  1.0};
+        std::vector < double > id(ida, std::end(ida));
+        declare_parameter("extrinsicRot", id);
+        get_parameter("extrinsicRot", extRotV);
+        declare_parameter("extrinsicRPY", id);
+        get_parameter("extrinsicRPY", extRPYV);
+        double zea[] = {0.0, 0.0, 0.0};
+        std::vector < double > ze(zea, std::end(zea));
+        declare_parameter("extrinsicTrans", ze);
+        get_parameter("extrinsicTrans", extTransV);
+
+        
+
+        declare_parameter("edgeThreshold", 1.0);
+        get_parameter("edgeThreshold", edgeThreshold);
+        declare_parameter("surfThreshold", 0.1);
+        get_parameter("surfThreshold", surfThreshold);
+        declare_parameter("edgeFeatureMinValidNum", 10);
+        get_parameter("edgeFeatureMinValidNum", edgeFeatureMinValidNum);
+        declare_parameter("surfFeatureMinValidNum", 100);
+        get_parameter("surfFeatureMinValidNum", surfFeatureMinValidNum);
+
+        declare_parameter("odometrySurfLeafSize", 0.4);
+        get_parameter("odometrySurfLeafSize", odometrySurfLeafSize);
+        declare_parameter("mappingCornerLeafSize", 0.2);
+        get_parameter("mappingCornerLeafSize", mappingCornerLeafSize);
+        declare_parameter("mappingSurfLeafSize", 0.4);
+        get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
+
+        declare_parameter("z_tollerance", 1000.0);
+        get_parameter("z_tollerance", z_tollerance);
+        declare_parameter("rotation_tollerance", 1000.0);
+        get_parameter("rotation_tollerance", rotation_tollerance);
+
+        declare_parameter("numberOfCores", 4);
+        get_parameter("numberOfCores", numberOfCores);
+        declare_parameter("mappingProcessInterval", 0.15);
+        get_parameter("mappingProcessInterval", mappingProcessInterval);
+
+        declare_parameter("surroundingkeyframeAddingDistThreshold", 1.0);
+        get_parameter("surroundingkeyframeAddingDistThreshold", surroundingkeyframeAddingDistThreshold);
+        declare_parameter("surroundingkeyframeAddingAngleThreshold", 0.2);
+        get_parameter("surroundingkeyframeAddingAngleThreshold", surroundingkeyframeAddingAngleThreshold);
+        declare_parameter("surroundingKeyframeDensity", 2.0);
+        get_parameter("surroundingKeyframeDensity", surroundingKeyframeDensity);
+        declare_parameter("surroundingKeyframeSearchRadius", 50.0);
+        get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
+
+        declare_parameter("loopClosureEnableFlag", true);
+        get_parameter("loopClosureEnableFlag", loopClosureEnableFlag);
+        declare_parameter("loopClosureFrequency", 1.0);
+        get_parameter("loopClosureFrequency", loopClosureFrequency);
+        declare_parameter("surroundingKeyframeSize", 50);
+        get_parameter("surroundingKeyframeSize", surroundingKeyframeSize);
+        declare_parameter("historyKeyframeSearchRadius", 15.0);
+        get_parameter("historyKeyframeSearchRadius", historyKeyframeSearchRadius);
+        declare_parameter("historyKeyframeSearchTimeDiff", 30.0);
+        get_parameter("historyKeyframeSearchTimeDiff", historyKeyframeSearchTimeDiff);
+        declare_parameter("historyKeyframeSearchNum", 25);
+        get_parameter("historyKeyframeSearchNum", historyKeyframeSearchNum);
+        declare_parameter("historyKeyframeFitnessScore", 0.3);
+        get_parameter("historyKeyframeFitnessScore", historyKeyframeFitnessScore);
+
+        declare_parameter("globalMapVisualizationSearchRadius", 1000.0);
+        get_parameter("globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius);
+        declare_parameter("globalMapVisualizationPoseDensity", 10.0);
+        get_parameter("globalMapVisualizationPoseDensity", globalMapVisualizationPoseDensity);
+        declare_parameter("globalMapVisualizationLeafSize", 1.0);
+        get_parameter("globalMapVisualizationLeafSize", globalMapVisualizationLeafSize);
+
+        sleep(1);
+        
+        geometry_msgs::msg::TransformStamped transform_stamped;
+        try
+        {
+            tf2::fromMsg(tfBuffer->lookupTransform( imuFrame, lidarFrame, rclcpp::Time(0)), transform_stamped);
+            extTrans.x() = transform_stamped.transform.translation.x;
+            extTrans.y() = transform_stamped.transform.translation.y;
+            extTrans.z() = transform_stamped.transform.translation.z;
+            extQRPY.x()  = transform_stamped.transform.rotation.x;
+            extQRPY.y()  = transform_stamped.transform.rotation.y;
+            extQRPY.z()  = transform_stamped.transform.rotation.z;
+            extQRPY.w()  = transform_stamped.transform.rotation.w;
+            extRot = Eigen::Matrix3d(extQRPY);
+        }
+        catch (tf2::TransformException ex)
+        {
+            RCLCPP_DEBUG(get_logger(), "Couldn't get transformation because %s, so using the one in param file.", ex.what());
+            extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRotV.data(), 3, 3);
+            extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
+            extQRPY = Eigen::Quaterniond(extRot);
+        }
+        
+            
+        cout <<"ext Rot: "<< extRot << endl;
         
     }
-    void getParameters(){
-        
-    }
+
     sensor_msgs::msg::Imu imuConverter(const sensor_msgs::msg::Imu& imu_in)
     {
-        
         sensor_msgs::msg::Imu imu_out = imu_in;//weird statment here ...
         // rotate acceleration
         Eigen::Vector3d acc(imu_in.linear_acceleration.x, imu_in.linear_acceleration.y, imu_in.linear_acceleration.z);

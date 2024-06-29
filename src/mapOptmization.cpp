@@ -148,15 +148,8 @@ public:
     Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
-
+    tf2::Transform lidar2Baselink;
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
-    float mappingCornerLeafSize,z_tollerance,gpsCovThreshold,poseCovThreshold,rotation_tollerance, mappingSurfLeafSize,imuRPYWeight,historyKeyframeSearchRadius, historyKeyframeSearchTimeDiff, historyKeyframeFitnessScore, loopClosureFrequency,surroundingKeyframeDensity,globalMapVisualizationSearchRadius,surroundingkeyframeAddingDistThreshold,surroundingkeyframeAddingAngleThreshold;
-    double mappingProcessInterval,ROBOT_HEIGHT = 0.662051,surroundingKeyframeSearchRadius;
-    std::string savePCDDirectory, gpsTopic,odometryFrame;
-    int N_SCAN, Horizon_SCAN,historyKeyframeSearchNum,surfFeatureMinValidNum,edgeFeatureMinValidNum,surroundingKeyframeSize,numberOfCores;
-    bool savePCD,loopClosureEnableFlag,useImuHeadingInitialization,useGpsElevation;
-    SensorType sensor = SensorType::OUSTER;
-
 
     mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("lio_sam_mapOptimization", options)
     {
@@ -164,7 +157,7 @@ public:
         parameters.relinearizeThreshold = 0.1;
         parameters.relinearizeSkip = 1;
         isam = new ISAM2(parameters);
-        getParmeters();
+
         pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("lio_sam/mapping/trajectory", 1);
         pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("lio_sam/mapping/map_global", 1);
         pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("lio_sam/mapping/odometry", qos);
@@ -300,102 +293,19 @@ public:
         }
 
         matP.setZero();
+        geometry_msgs::msg::TransformStamped transform_stamped;
+        try
+            {
+                tf2::fromMsg(tfBuffer->lookupTransform(baselinkFrame, lidarFrame, rclcpp::Time(0)), transform_stamped);
+                
+                tf2::fromMsg(transform_stamped.transform,lidar2Baselink);
+            }
+            catch (tf2::TransformException ex)
+            {
+                RCLCPP_INFO(get_logger(), "Couldn't get transformation because %s.", ex.what());
+                
+            }
     }
-
-    void getParmeters(){
-        declare_parameter("savePCDDirectory", "/Downloads/LOAM/");
-        get_parameter("savePCDDirectory", savePCDDirectory);
-        declare_parameter("savePCD", false);
-        get_parameter("savePCD", savePCD);
-        declare_parameter("mappingCornerLeafSize", 0.2);
-        get_parameter("mappingCornerLeafSize", mappingCornerLeafSize);
-        declare_parameter("mappingSurfLeafSize", 0.4);
-        get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
-        declare_parameter("gpsTopic", "lio_sam/odometry/gps");
-        get_parameter("gpsTopic", gpsTopic);
-        declare_parameter("surroundingKeyframeDensity", 2.0);
-        get_parameter("surroundingKeyframeDensity", surroundingKeyframeDensity);
-        declare_parameter("mappingProcessInterval", 0.15);
-        get_parameter("mappingProcessInterval", mappingProcessInterval);
-        declare_parameter("N_SCAN", 64);
-        get_parameter("N_SCAN", N_SCAN);
-        declare_parameter("Horizon_SCAN", 512);
-        get_parameter("Horizon_SCAN", Horizon_SCAN);
-        declare_parameter("globalMapVisualizationSearchRadius", 1000.0);
-        get_parameter("globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius);
-        declare_parameter("odometryFrame", "odom");
-        get_parameter("odometryFrame", odometryFrame);
-        declare_parameter("loopClosureEnableFlag", true);
-        get_parameter("loopClosureEnableFlag", loopClosureEnableFlag);
-        declare_parameter("loopClosureFrequency", 1.0);
-        get_parameter("loopClosureFrequency", loopClosureFrequency);
-        declare_parameter("historyKeyframeSearchRadius", 15.0);
-        get_parameter("historyKeyframeSearchRadius", historyKeyframeSearchRadius);
-        declare_parameter("historyKeyframeSearchTimeDiff", 30.0);
-        get_parameter("historyKeyframeSearchTimeDiff", historyKeyframeSearchTimeDiff);
-        declare_parameter("historyKeyframeSearchNum", 25);
-        get_parameter("historyKeyframeSearchNum", historyKeyframeSearchNum);
-        declare_parameter("historyKeyframeFitnessScore", 0.3);
-        get_parameter("historyKeyframeFitnessScore", historyKeyframeFitnessScore);
-        declare_parameter("useImuHeadingInitialization", false);
-        get_parameter("useImuHeadingInitialization", useImuHeadingInitialization);
-        declare_parameter("surroundingKeyframeSize", 50);
-        get_parameter("surroundingKeyframeSize", surroundingKeyframeSize);
-        declare_parameter("surroundingKeyframeSearchRadius", 50.0);
-        get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
-        declare_parameter("edgeFeatureMinValidNum", 10);
-        get_parameter("edgeFeatureMinValidNum", edgeFeatureMinValidNum);
-        declare_parameter("surfFeatureMinValidNum", 100);
-        get_parameter("surfFeatureMinValidNum", surfFeatureMinValidNum);
-        declare_parameter("imuRPYWeight", 0.01);
-        get_parameter("imuRPYWeight", imuRPYWeight);
-        declare_parameter("z_tollerance", 1000.0);
-        get_parameter("z_tollerance", z_tollerance);
-        declare_parameter("rotation_tollerance", 1000.0);
-        get_parameter("rotation_tollerance", rotation_tollerance);
-        declare_parameter("surroundingkeyframeAddingDistThreshold", 1.0);
-        get_parameter("surroundingkeyframeAddingDistThreshold", surroundingkeyframeAddingDistThreshold);
-        declare_parameter("surroundingkeyframeAddingAngleThreshold", 0.2);
-        get_parameter("surroundingkeyframeAddingAngleThreshold", surroundingkeyframeAddingAngleThreshold);
-        declare_parameter("useGpsElevation", false);
-        get_parameter("useGpsElevation", useGpsElevation);
-        declare_parameter("gpsCovThreshold", 2.0);
-        get_parameter("gpsCovThreshold", gpsCovThreshold);
-        declare_parameter("poseCovThreshold", 25.0);
-        get_parameter("poseCovThreshold", poseCovThreshold);
-        declare_parameter("numberOfCores", 4);
-        get_parameter("numberOfCores", numberOfCores);
-
-
-
-
-
-        std::string sensorStr;
-        declare_parameter("sensor", "ouster");
-        get_parameter("sensor", sensorStr);
-        if (sensorStr == "velodyne")
-        {
-            sensor = SensorType::VELODYNE;
-        }
-        else if (sensorStr == "ouster")
-        {
-            sensor = SensorType::OUSTER;
-        }
-        else if (sensorStr == "livox")
-        {
-            sensor = SensorType::LIVOX;
-        }
-        else
-        {
-            RCLCPP_ERROR_STREAM(
-                get_logger(),
-                "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox'): " << sensorStr);
-            rclcpp::shutdown();
-        }
-
-
-
-    }   
 
     void laserCloudInfoHandler(const lio_sam::msg::CloudInfo::SharedPtr msgIn)
     {
@@ -477,7 +387,7 @@ public:
 
         int cloudSize = cloudIn->size();
         cloudOut->resize(cloudSize);
-
+        
         Eigen::Affine3f transCur = pcl::getTransformation(transformIn->x, transformIn->y, transformIn->z, transformIn->roll, transformIn->pitch, transformIn->yaw);
         if (inverse)
             transCur = transCur.inverse();
@@ -596,7 +506,7 @@ public:
         }
         mtx.unlock();
         kdtreeGlobalMap->setInputCloud(globalMapKeyFrames);
-        kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius, pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
+        kdtreeGlobalMap->radiusSearch(cloudKeyPoses3D->back(), globalMapVisualizationSearchRadius* sqrt(2), pointSearchIndGlobalMap, pointSearchSqDisGlobalMap, 0);
         // vector<float> intensities = {};
         // float mean = 0, variance=0;
         for (int i = 0; i < (int)pointSearchIndGlobalMap.size(); ++i)
@@ -617,7 +527,7 @@ public:
         *globalMapss = *movePointCloud(globalMapss,  &cloudKeyPoses6D->back());
         
         rclcpp::Clock clock;
-        publishCloud(pubLaserCloudSurround, globalMapss, clock.now(), odometryFrame);
+        publishCloud(pubLaserCloudSurround, globalMapss, clock.now(), mapFrame);
         const std::chrono::duration<double> duration  = std::chrono::system_clock::now() - methodStartTime;
         std::stringstream printing;
         printing << "Computation took "<< 1000*duration.count()<<" ms.";
@@ -636,8 +546,64 @@ public:
         RCLCPP_INFO(get_logger(), printing.str().c_str());
     }
 
+// pcl::PointCloud<PointType>::Ptr movePointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
+//     {
+//         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
 
+//         int cloudSize = cloudIn->size();
+//         cloudOut->resize(cloudSize);
+        
+//         Eigen::Affine3f transCur = pcl::getTransformation(0, 0, 0, transformIn->roll, transformIn->pitch, 0);
+//         transCur = transCur.inverse();
+        
+//         #pragma omp parallel for num_threads(numberOfCores)
+//         for (int i = 0; i < cloudSize; ++i)
+//         {
+//             auto pointFrom = cloudIn->points[i];
+//             pointFrom.x -= transformIn->x;
+//             pointFrom.y -= transformIn->y;
+//             pointFrom.z -= transformIn->z;
+//             cloudOut->points[i].x = transCur(0,0) * pointFrom.x + transCur(0,1) * pointFrom.y + transCur(0,2) * pointFrom.z ;
+//             cloudOut->points[i].y = transCur(1,0) * pointFrom.x + transCur(1,1) * pointFrom.y + transCur(1,2) * pointFrom.z ;
+//             cloudOut->points[i].z = transCur(2,0) * pointFrom.x + transCur(2,1) * pointFrom.y + transCur(2,2) * pointFrom.z ;
+//             cloudOut->points[i].z +=  ROBOT_HEIGHT;
+//             cloudOut->points[i].intensity = pointFrom.intensity;
+//         }
+//         return cloudOut;
+//     }
+// pcl::PointCloud<PointType>::Ptr movePointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, string source, string target)
+//     {
+//     pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
+//     tf2::Stamped<tf2::Transform>  source2target;
+//     try
+//         {
+//             tf2::fromMsg(tfBuffer->lookupTransform(
+//                 target,source, rclcpp::Time(0)), source2target);
+//         }
+//         catch (tf2::TransformException ex)
+//         {
+//             RCLCPP_DEBUG(get_logger(), "%s", ex.what());
+//         }
+//     int cloudSize = cloudIn->size();
+//     cloudOut->resize(cloudSize);
 
+    
+
+//     #pragma omp parallel for num_threads(numberOfCores)
+//     for (int i = 0; i < cloudSize; ++i)
+//     {
+//         const auto &pointFrom = cloudIn->points[i];
+
+//         tf2::Vector3 p(pointFrom.x, pointFrom.y, pointFrom.z);
+//         tf2::Vector3 p_transformed = source2target * p;
+
+//         cloudOut->points[i].x = p_transformed.x();
+//         cloudOut->points[i].y = p_transformed.y();
+//         cloudOut->points[i].z = p_transformed.z();
+//         cloudOut->points[i].intensity = pointFrom.intensity;
+//     }
+//     return cloudOut;
+// }
 
 
 
@@ -1801,11 +1767,12 @@ public:
         quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
         tf2::Transform t_odom_to_lidar = tf2::Transform(quat_tf, tf2::Vector3(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]));
         tf2::TimePoint time_point = tf2_ros::fromRclcpp(timeLaserInfoStamp);
-        tf2::Stamped<tf2::Transform> temp_odom_to_lidar(t_odom_to_lidar, time_point, odometryFrame);
-        geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
-        tf2::convert(temp_odom_to_lidar, trans_odom_to_lidar);
-        trans_odom_to_lidar.child_frame_id = "lidar_link";
-        br->sendTransform(trans_odom_to_lidar);
+        tf2::Stamped<tf2::Transform> temp_odom_to_base(t_odom_to_lidar * lidar2Baselink, time_point, odometryFrame);
+        
+        geometry_msgs::msg::TransformStamped trans_odom_to_base;
+        tf2::convert(temp_odom_to_base, trans_odom_to_base);
+        trans_odom_to_base.child_frame_id = baselinkFrame;
+        br->sendTransform(trans_odom_to_base);
 
         // Publish odometry for ROS (incremental)
         static bool lastIncreOdomPubFlag = false;
