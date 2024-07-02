@@ -1,5 +1,6 @@
+# Update
+The package has been adapted to run on ROS2 Humble, based on the work of [TixiaoShan](https://github.com/TixiaoShan/LIO-SAM). and also to be integrated with the [Traversability_analysis](https://github.com/babahadjsaid/traversability_analysis) package for unstructured terrain traversability.
 # LIO-SAM
-
 **A real-time lidar-inertial odometry package. We strongly recommend the users read this document thoroughly and test the package with the provided dataset first. A video of the demonstration of the method can be found on [YouTube](https://www.youtube.com/watch?v=A0H8CoORZJU).**
 
 <p align='center'>
